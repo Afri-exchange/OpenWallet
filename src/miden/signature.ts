@@ -1,22 +1,15 @@
 import { createHash, randomUUID } from "node:crypto";
 
-/**
- * The Miden docs are inconsistent: prose says base64(SHA-1 digest), but the
- * PHP/C#/JS/Python samples base64 the *hex* SHA-1 string. Default to the
- * samples; confirm against the sandbox and drop the unused mode.
- */
-export type SignatureMode = "base64-of-hex" | "base64-of-digest";
-
 /** 20-char nonce, sent as the Reference header and signed. */
 export const newReference = (): string => randomUUID().replaceAll("-", "").slice(0, 20);
 
-export function sign(
-  p: { method: string; url: string; reference: string; clientId: string; clientSecret: string },
-  mode: SignatureMode = "base64-of-hex",
-): string {
+/**
+ * base64 of the *hex* SHA-1 string, as in the PHP/C#/JS/Python samples.
+ * Confirmed against the sandbox 2026-10-19: this is accepted, while base64 of
+ * the raw digest gets 403 "Invalid Signature". `url` is the full URL including
+ * the query string.
+ */
+export function sign(p: { method: string; url: string; reference: string; clientId: string; clientSecret: string }): string {
   const base = [p.method.toUpperCase(), encodeURIComponent(p.url), p.reference, p.clientId, p.clientSecret].join("&");
-  const sha = createHash("sha1").update(base);
-  return mode === "base64-of-hex"
-    ? Buffer.from(sha.digest("hex")).toString("base64")
-    : sha.digest().toString("base64");
+  return Buffer.from(createHash("sha1").update(base).digest("hex")).toString("base64");
 }

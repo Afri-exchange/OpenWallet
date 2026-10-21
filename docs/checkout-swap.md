@@ -86,3 +86,31 @@ It checks the total at load, again after the contact/shipping steps (shipping an
 **Not tested**: that Shopify's real markup matches our selectors (input names, card-frame titles, `#checkout-pay-button`, total markup are from published knowledge, not a live page), Shopify's bot checks, real 3-D Secure.
 
 **To test on a real page for free**: create a Shopify development store (free Partner account), enable the Bogus Gateway under Payments, open a checkout, and run the filler with a card whose number is `1`.
+
+## Lemon Squeezy checkouts
+
+`LemonSqueezyFiller` (`lemonsqueezy-filler.ts`) pays `https://<store>.lemonsqueezy.com/checkout/...` pages; `RoutingFiller` picks it by host + path. Add each store's host to `SWAP_ALLOWED_HOSTS`; there is no wildcard.
+
+Lemon Squeezy is the merchant of record, so **tax is added once the billing country and ZIP are entered**. The filler checks the total at load, again after country + ZIP, and once more before pressing pay; the card is typed only after the second check. It refuses (nothing typed) a non-USD total, a country the page does not offer, or a card with no ZIP on file. Card fields are Stripe Elements iframes (one frame per field, or one frame for all three); the filler finds each by the input inside it.
+
+**Tested** against a local mock (`lemonsqueezy-fixture.ts`, `test/lemonsqueezy-filler.test.ts`): routing, both frame layouts, the tax price change, outcome classification.
+
+**Not tested**: that Lemon Squeezy's real markup matches our selectors (total element, field names, pay button, confirmation) — they are from general knowledge, not a live page. Also bot checks and real 3-D Secure. **To test for free**: create a Lemon Squeezy store in test mode, make a product, open its test checkout URL and pay with `4242 4242 4242 4242`; expect to adjust selectors in `SEL`.
+
+## Paddle checkouts
+
+`PaddleFiller` (`paddle-filler.ts`) pays Paddle Billing checkouts: hosted links (`pay.paddle.io/hsc_...`, `sandbox-pay.paddle.io`), `*.paddle.com` pages, and any merchant page carrying `?_ptxn=txn_...` (Paddle's checkout opens in an iframe there; the filler works out whether the form is the page or a frame). `RoutingFiller` picks it from the URL. Add the exact host to `SWAP_ALLOWED_HOSTS` (for example `pay.paddle.io`); a `_ptxn` link is on the merchant's own host, which must be allowed too.
+
+Paddle is the merchant of record, so tax is added from the buyer's country and postal code. That changes the price check:
+
+- **At load**: a total above the agreed amount is refused; a lower, pre-tax total passes.
+- **After country + postal code** (taken from the card's billing address and ZIP): the total must equal the agreed amount exactly, and only then is the card typed. Agree the tax-inclusive amount.
+- **Before pressing pay**: checked again.
+
+Without a billing country and postal code on file, or if the form has no option for the card's country, the run stops before anything is typed (`unsupported_page`, nothing charged). A total not in USD is refused. Success is Paddle's success state or a redirect to a `/thank-you`, `/success`, `/confirmation` or `/done` page; a decline message is matched by wording only and not stored; no answer after pressing pay is `error` with `submitted: true` (charge state unknown).
+
+**Tested** against a local mock (`paddle-fixture.ts`, `test/paddle-filler.test.ts`): hosted and iframe layouts, the tax step, price checks, missing billing details, outcome classification.
+
+**Not tested**: that Paddle's real markup matches our selectors (field names and labels, button names, `data-testid` total markup are from published knowledge, not a live page), Paddle's bot checks, real 3-D Secure, and the tax behaviour of a real account.
+
+**To test on a real page for free**: use a Paddle sandbox account, create a transaction and open its checkout, then run the filler with the sandbox test card `4242 4242 4242 4242` and the exact tax-inclusive total.

@@ -1,0 +1,10 @@
+{
+  "name": "agent-cards-example-shop",
+  "private": true,
+  "type": "module",
+  "description": "Sample merchant: products, a cart, and checkout through @agent-cards/checkout",
+  "scripts": {
+    "start": "node --import tsx server.ts",
+    "test": "node --import tsx --test shop.test.ts"
+  }
+}
