@@ -39,6 +39,8 @@ export interface CardVault {
   /** Audited: every call writes a row with `purpose` before anything is decrypted. null if nothing is stored. */
   reveal(cardId: string, purpose: string): Promise<CardDetails | null>;
   has(cardId: string): Promise<boolean>;
+  /** Deletes a card's stored details (audited). For one-time cards once their checkout has been filled. */
+  discard(cardId: string, purpose: string): Promise<void>;
 }
 
 const KEY_BYTES = 32;
@@ -130,6 +132,12 @@ export class PgCardVault implements CardVault {
   async has(cardId: string): Promise<boolean> {
     return (await this.pool.query("SELECT 1 FROM card_vault WHERE card_id = $1", [cardId])).rowCount === 1;
   }
+
+  async discard(cardId: string, purpose: string): Promise<void> {
+    checkPurpose(purpose);
+    const r = await this.pool.query("DELETE FROM card_vault WHERE card_id = $1", [cardId]);
+    if (r.rowCount) await this.pool.query("INSERT INTO card_vault_audit (card_id, action, purpose) VALUES ($1, 'discard', $2)", [cardId, purpose]);
+  }
 }
 
 /** In-memory vault for tests: same sealing and audit semantics, no database. */
@@ -158,5 +166,10 @@ export class MemoryCardVault implements CardVault {
 
   async has(cardId: string): Promise<boolean> {
     return this.rows.has(cardId);
+  }
+
+  async discard(cardId: string, purpose: string): Promise<void> {
+    checkPurpose(purpose);
+    if (this.rows.delete(cardId)) this.audit.push({ cardId, action: "discard", purpose });
   }
 }

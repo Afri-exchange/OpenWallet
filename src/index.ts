@@ -10,3 +10,4 @@ export * from "./ledger/pg-store.js";
 export * from "./cards/lifecycle.js";
 export * from "./chain/base-usdc-watcher.js";
 export * from "./chain/pg.js";
+export * from "./developers/service.js";

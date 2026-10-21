@@ -1,9 +1,13 @@
 import type { FundingReceipt, FundingSource, Stablecoin } from "../funding/types.js";
 import type { MidenClient } from "../miden/client.js";
 import { referenceFor } from "../funding/miden-wallet.js";
+import { MidenBusinessError } from "./lifecycle.js";
 import { decryptSecureCardDetails, fetchFullCardDetails, type DetailKeys } from "../miden/card-details.js";
 import type { CardDetails, CardVault, CaptureSource } from "../vault/vault.js";
 import { evaluate, type SpendPolicy } from "./policy.js";
+
+/** A one-time card is set to terminate itself this many days after issue (Miden does not terminate cards on the day they are made). */
+export const ONE_TIME_TERMINATE_DAYS = 2;
 
 export type AuthorizationResult = { ok: true } | { ok: false; reason: string };
 
@@ -94,6 +98,47 @@ export class CardService {
       return false;
     }) || (await this.captureDetails(cardId));
     return { id: cardId, agentId, policy, detailsCaptured };
+  }
+
+  /**
+   * A one-time card: Miden "Lite" card with one swipe and exactly `amountCents` on it (debited from the funding wallet at
+   * issue; Lite cards cannot be topped up). Ends on its first successful use, or at `terminateDate`, whichever is first.
+   * `clientReference` must be stable per payment so a retried issue cannot create a second card.
+   * With `capture` and a vault, the details are sealed into the vault like any card's; skip it when only the card id is needed.
+   */
+  async issueOneTime(
+    kyc: CardholderKyc, amountCents: number, clientReference: string,
+    opts: { capture: boolean; terminateInDays?: number },
+  ): Promise<{ cardId: string; lastFour?: string; detailsCaptured: boolean }> {
+    if (!Number.isSafeInteger(amountCents) || amountCents <= 0) throw new Error("amount must be a positive whole number of cents");
+    const now = this.now();
+    const expires = new Date(now);
+    expires.setUTCMonth(expires.getUTCMonth() + 37); // Miden: at least 36 months from issue
+    const terminates = new Date(now.getTime() + (opts.terminateInDays ?? ONE_TIME_TERMINATE_DAYS) * 86_400_000);
+    const day = (d: Date) => d.toISOString().slice(0, 10);
+    const res = await this.miden.request<IssueResponse>(
+      "POST",
+      "/api/v2/cards/issue-lite",
+      {
+        customerId: kyc.customerId, kycToken: kyc.kycToken, swipeCount: 1,
+        // Sandbox minimum card balance is $1 (responseCode 117); a smaller payment leaves the rest on the card.
+        cardBalance: Math.max(amountCents, 100) / 100,
+        expirationDate: day(expires), terminateDate: day(terminates),
+        cardBrand: "Visa", walletCurrency: "USD", cardCurrency: "USD", clientReference, contactlessPayment: false,
+      },
+      { reference: referenceFor(`issue-lite:${clientReference}`), timeoutMs: 60_000 },
+    );
+    const cardId = res.data?.cardId;
+    if (res.isSuccessful !== true || res.responseCode !== "000" || !cardId) {
+      throw new MidenBusinessError(`Miden one-time card issuance failed: ${res.responseCode ?? "?"} ${res.responseMessage ?? ""}`);
+    }
+    const lastFour = res.data?.lastFour;
+    if (!opts.capture || !this.capture) return { cardId, lastFour, detailsCaptured: false };
+    const detailsCaptured = await this.captureFromIssue(cardId, res.data!).catch((e: unknown) => {
+      this.capture!.log?.(`card ${cardId}: capture at issue failed: ${(e as Error).message}`);
+      return false;
+    }) || (await this.captureDetails(cardId));
+    return { cardId, lastFour, detailsCaptured };
   }
 
   private async captureFromIssue(cardId: string, data: NonNullable<IssueResponse["data"]>): Promise<boolean> {

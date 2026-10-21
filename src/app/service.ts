@@ -24,7 +24,7 @@ export interface AppDeps {
   ledger: Ledger;
   miden: MidenClient;
   lifecycle: CardLifecycle;
-  cards: CardService;
+  cards: Pick<CardService, "issue" | "issueOneTime">;
   funding: FundingSource;
   wallets: AgentWallets;
   addresses: PgDepositAddresses;
@@ -39,6 +39,8 @@ export interface AppDeps {
   simulatedDeposits?: boolean;
   now?: () => Date;
   log?: (msg: string) => void;
+  /** Told about things a developer may want a webhook for (kyc.updated, card.issued, funding.completed, spend.settled). Never throws into the money path. */
+  onEvent?: (userId: string, type: string, data: Record<string, unknown>) => Promise<void>;
 }
 
 export interface AgentPrincipal {
@@ -68,6 +70,8 @@ export interface SpendView {
 
 /** Miden's minimum useful top-up for us; smaller holding balances wait for more deposits. */
 const MIN_FUNDING_CENTS = 100;
+const ONE_TIME_MIN_CENTS = 100;
+const ONE_TIME_MAX_PER_DAY = 50;
 /** A payment still unanswered this long after it started is checked against the card's transactions. */
 const RECONCILE_AFTER_MS = 60_000;
 /** A payment the card network has no record of after this long is flagged for review (never refunded automatically). */
@@ -130,6 +134,35 @@ export class AppService {
     this.log = d.log ?? (() => undefined);
   }
 
+  // ---------- developer events ----------
+
+  /** Fire and forget: a webhook problem must never hold up or fail a money movement. */
+  private emit(userId: string, type: string, data: Record<string, unknown>): void {
+    if (!this.d.onEvent) return;
+    void this.d.onEvent(userId, type, data).catch((e) => this.log(`event ${type} for ${userId}: ${errText(e)}`));
+  }
+
+  private emitForCard(cardId: string, type: string, data: Record<string, unknown>): void {
+    if (!this.d.onEvent) return;
+    void this.d.pool.query("SELECT user_id FROM app_card WHERE card_id = $1", [cardId])
+      .then((r) => r.rows[0] && this.emit(r.rows[0].user_id, type, { cardId, ...data }))
+      .catch((e) => this.log(`event ${type} for card ${cardId}: ${errText(e)}`));
+  }
+
+  /** Reports a spend that has just reached a final status. */
+  private emitSpend(spendId: string): void {
+    if (!this.d.onEvent) return;
+    void this.d.pool.query("SELECT s.*, c.user_id FROM app_spend s JOIN app_card c ON c.card_id = s.card_id WHERE s.spend_id = $1", [spendId])
+      .then((r) => {
+        const s = r.rows[0];
+        if (!s || s.status === "processing") return;
+        this.emit(s.user_id, "spend.settled", {
+          spendId, cardId: s.card_id, agentId: s.agent_id, status: s.status, amountCents: num(s.amount_cents), merchant: s.merchant, mcc: s.mcc, reason: s.reason,
+        });
+      })
+      .catch((e) => this.log(`event spend.settled for ${spendId}: ${errText(e)}`));
+  }
+
   // ---------- boot ----------
 
   /** Rebuilds in-memory agent state from Postgres and settles anything a crash left half done. */
@@ -159,6 +192,69 @@ export class AppService {
       throw e;
     }
     return { userId, token };
+  }
+
+  /**
+   * A user made through the developer API. They have no owner token (nobody can sign in to the dashboard as them);
+   * the developer reaches them with the developer key, and the end user with a short-lived session.
+   * The same externalId returns the same user.
+   */
+  async createManagedUser(developerId: string, externalIdIn: unknown, emailIn: unknown, privacyIn?: unknown): Promise<{ userId: string; created: boolean }> {
+    const externalId = requireText(externalIdIn, "externalId", 120);
+    const email = requireText(emailIn, "email", 254).toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new AppError(400, "email is not valid");
+    if (privacyIn !== undefined && privacyIn !== null && typeof privacyIn !== "boolean") throw new AppError(400, "privacyMode must be true or false");
+    const existing = await this.d.pool.query("SELECT id FROM app_user WHERE developer_id = $1 AND external_id = $2", [developerId, externalId]);
+    if (existing.rows[0]) return { userId: existing.rows[0].id, created: false };
+    // Privacy mode is fixed at creation: the developer's default unless this user is created with an explicit choice.
+    const privacy = typeof privacyIn === "boolean"
+      ? privacyIn
+      : (await this.d.pool.query("SELECT privacy_mode FROM app_developer WHERE id = $1", [developerId])).rows[0]?.privacy_mode === true;
+    const userId = newId("u");
+    try {
+      // A token nobody is given: the owner API needs a uk_ token, and this one is never shown.
+      await this.d.pool.query(
+        "INSERT INTO app_user (id, email, token_hash, developer_id, external_id, privacy_mode) VALUES ($1, $2, $3, $4, $5, $6)",
+        [userId, email, hashToken(newToken("uk")), developerId, externalId, privacy],
+      );
+    } catch (e) {
+      if ((e as { code?: string }).code === "23505") {
+        const again = await this.d.pool.query("SELECT id FROM app_user WHERE developer_id = $1 AND external_id = $2", [developerId, externalId]);
+        if (again.rows[0]) return { userId: again.rows[0].id, created: false };
+        throw new AppError(409, "that email already has an account");
+      }
+      throw e;
+    }
+    return { userId, created: true };
+  }
+
+  /** Whether this user's payments each use a fresh one-time card. */
+  async privacyMode(userId: string): Promise<boolean> {
+    const r = await this.d.pool.query("SELECT privacy_mode FROM app_user WHERE id = $1", [userId]);
+    return r.rows[0]?.privacy_mode === true;
+  }
+
+  /** The user's id and the developer who owns them, if any. */
+  async userOwner(userId: string): Promise<{ developerId: string | null; externalId: string | null } | undefined> {
+    const r = await this.d.pool.query("SELECT developer_id, external_id FROM app_user WHERE id = $1", [userId]);
+    return r.rows[0] ? { developerId: r.rows[0].developer_id, externalId: r.rows[0].external_id } : undefined;
+  }
+
+  /** Mints a session for one of the developer's users. The raw token is returned once. */
+  async createSession(developerId: string, userId: string, ttlSeconds: number): Promise<{ token: string; expiresAt: string }> {
+    const owner = await this.userOwner(userId);
+    if (!owner || owner.developerId !== developerId) throw new AppError(404, "user not found");
+    const token = newToken("us");
+    const expiresAt = new Date(this.now().getTime() + ttlSeconds * 1000);
+    await this.d.pool.query("INSERT INTO app_session (token_hash, user_id, developer_id, expires_at) VALUES ($1, $2, $3, $4)", [hashToken(token), userId, developerId, expiresAt]);
+    // Sessions are cheap; keep the table small.
+    await this.d.pool.query("DELETE FROM app_session WHERE expires_at < $1", [new Date(this.now().getTime() - 86_400_000)]);
+    return { token, expiresAt: expiresAt.toISOString() };
+  }
+
+  async userBySession(token: string): Promise<string | undefined> {
+    const r = await this.d.pool.query("SELECT user_id FROM app_session WHERE token_hash = $1 AND expires_at > $2", [hashToken(token), this.now()]);
+    return r.rows[0]?.user_id;
   }
 
   /** Replaces the user's token; the old one stops working at once. */
@@ -227,7 +323,10 @@ export class AppService {
     }
     if (!user.kyc_reference) return;
     const kyc = await this.d.lifecycle.kycStatus(user.kyc_reference);
-    if (kyc.status !== user.kyc_status) await this.d.pool.query("UPDATE app_user SET kyc_status = $2 WHERE id = $1", [userId, kyc.status]);
+    if (kyc.status !== user.kyc_status) {
+      await this.d.pool.query("UPDATE app_user SET kyc_status = $2 WHERE id = $1", [userId, kyc.status]);
+      this.emit(userId, "kyc.updated", { kycStatus: kyc.status });
+    }
     if (kyc.status !== "Approved" || !kyc.customerId || !kyc.kycToken) return;
     const limits = this.d.tiers[user.tier as Tier];
     const policy: SpendPolicy = { perTransactionCents: limits.perTransactionCents, dailyCents: limits.dailyCents };
@@ -238,6 +337,7 @@ export class AppService {
       [card.id, userId, kyc.customerId, policy.perTransactionCents, policy.dailyCents],
     );
     this.log(`card issued for ${userId}`);
+    this.emit(userId, "card.issued", { cardId: card.id });
     await this.ensureDepositAddress(card.id);
   }
 
@@ -255,7 +355,7 @@ export class AppService {
   async overview(userId: string) {
     const user = await this.user(userId);
     const card = await this.cardOf(userId);
-    const base = { userId, email: user.email as string, tier: user.tier as Tier, kycStatus: user.kyc_status as string, sandbox: this.d.sandbox, simulatedDeposits: !!(this.d.sandbox && this.d.simulatedDeposits) };
+    const base = { userId, email: user.email as string, tier: user.tier as Tier, kycStatus: user.kyc_status as string, privacyMode: user.privacy_mode === true, sandbox: this.d.sandbox, simulatedDeposits: !!(this.d.sandbox && this.d.simulatedDeposits) };
     if (!card) return { ...base, card: null };
     const cardId = card.card_id as string;
     const [holding, pending, onCard, address, agents, fundings, deposits] = await Promise.all([
@@ -358,9 +458,15 @@ export class AppService {
     let landed: boolean;
     let detail: string | null = null;
     try {
-      const receipt = await this.d.funding.fund({ cardId, amountCents, asset: "USDC", idempotencyKey: fundingId });
-      landed = receipt.status === "confirmed";
-      detail = `miden ${receipt.id}`;
+      if (await this.isPrivacyCard(cardId)) {
+        // Privacy mode: the money stays in the Miden wallet and pays for each one-time card as it is issued.
+        landed = true;
+        detail = "privacy mode: held in the Miden wallet";
+      } else {
+        const receipt = await this.d.funding.fund({ cardId, amountCents, asset: "USDC", idempotencyKey: fundingId });
+        landed = receipt.status === "confirmed";
+        detail = `miden ${receipt.id}`;
+      }
     } catch (e) {
       if (e instanceof MidenDuplicateReferenceError) {
         // Miden has seen this Reference, which does not prove the top-up succeeded: look for it.
@@ -377,6 +483,7 @@ export class AppService {
     if (landed) {
       await this.d.ledger.completeFunding({ cardId, amountCents, fundingId });
       await set("completed", detail);
+      this.emitForCard(cardId, "funding.completed", { fundingId, amountCents });
       this.log(`funded card ${cardId.slice(0, 8)} with ${amountCents}c`);
     } else {
       await this.d.ledger.releaseFunding({ cardId, amountCents, fundingId });
@@ -400,6 +507,7 @@ export class AppService {
     if (t && /^(approved|successful)$/i.test(t.transactionStatus ?? "")) {
       await this.d.ledger.completeFunding({ cardId, amountCents, fundingId });
       await this.d.pool.query("UPDATE app_funding SET status = 'completed', detail = $2, updated_at = now() WHERE funding_id = $1", [fundingId, `found on the card (${t.id ?? "?"})`]);
+      this.emitForCard(cardId, "funding.completed", { fundingId, amountCents });
       this.log(`funding ${fundingId}: found on the card, completed`);
     } else if (t && /^(declined|failed)$/i.test(t.transactionStatus ?? "")) {
       await this.d.ledger.releaseFunding({ cardId, amountCents, fundingId });
@@ -501,6 +609,79 @@ export class AppService {
       spentTodayCents: await this.spentToday(cardId, a.agent_id),
       recent: await this.spends(cardId, a.agent_id, 10),
     })));
+  }
+
+  // ---------- privacy mode: one-time cards ----------
+
+  private async isPrivacyCard(cardId: string): Promise<boolean> {
+    const r = await this.d.pool.query("SELECT u.privacy_mode FROM app_card c JOIN app_user u ON u.id = c.user_id WHERE c.card_id = $1", [cardId]);
+    return r.rows[0]?.privacy_mode === true;
+  }
+
+  /**
+   * The card a payment is charged to: the user's own card, or, in privacy mode, a one-time card issued for exactly this
+   * payment (after the agent's limits passed and its money was debited). One row per spend, written before the issue
+   * call, so the same spend never gets two cards and a crash mid-issue is flagged, not guessed at.
+   * Throws an AppError when no card could be made; the caller then undoes the debit (nothing was charged).
+   * `needDetails`: also seal the card's details into the vault (a hosted-checkout fill needs them; the simulator does not).
+   */
+  async chargeCardFor(p: AgentPrincipal, spendId: string, amountCents: number, opts: { needDetails: boolean }): Promise<string> {
+    if (!(await this.privacyMode(p.userId))) return p.cardId;
+    const pool = this.d.pool;
+    const prior = (await pool.query("SELECT * FROM app_one_time_card WHERE spend_id = $1", [spendId])).rows[0];
+    if (prior?.status === "ready" && prior.card_id) return prior.card_id;
+    // Miden loads at least $1 on a Lite card, so a smaller payment would park the rest of a dollar on a single-swipe card.
+    if (!prior && amountCents < ONE_TIME_MIN_CENTS) throw new AppError(422, "privacy mode needs a payment of at least $1.00 (the smallest one-time card); nothing was charged");
+    // A card that is refused or abandoned keeps its funds until it terminates, so cap how fast one user can make cards.
+    if (!prior) {
+      const n = Number((await pool.query("SELECT count(*) AS n FROM app_one_time_card WHERE user_id = $1 AND created_at > now() - interval '24 hours'", [p.userId])).rows[0].n);
+      if (n >= ONE_TIME_MAX_PER_DAY) throw new AppError(429, `privacy mode allows ${ONE_TIME_MAX_PER_DAY} one-time cards a day per user; nothing was charged`);
+    }
+    if (prior) throw new AppError(409, "a one-time card for this payment was already attempted and needs a person to look at it; nothing was charged");
+    const rowId = newId("ot", 8);
+    const mark = (status: string, detail: string | null, cardId?: string) =>
+      pool.query("UPDATE app_one_time_card SET status = $2, detail = $3, card_id = COALESCE($4, card_id), updated_at = now() WHERE one_time_id = $1", [rowId, status, detail, cardId ?? null]);
+    try {
+      await pool.query("INSERT INTO app_one_time_card (one_time_id, user_id, spend_id, amount_cents, status) VALUES ($1, $2, $3, $4, 'issuing')", [rowId, p.userId, spendId, amountCents]);
+    } catch (e) {
+      // A concurrent attempt for the same spend won the unique index.
+      if ((e as { code?: string }).code === "23505") throw new AppError(409, "a one-time card for this payment is already being made; nothing was charged");
+      throw e;
+    }
+    const user = await this.user(p.userId);
+    let kyc: { status: string; customerId?: string; kycToken?: string };
+    try {
+      kyc = await this.d.lifecycle.kycStatus(user.kyc_reference);
+    } catch (e) {
+      await mark("failed", `KYC lookup failed: ${errText(e)}`.slice(0, 200));
+      throw new AppError(503, "could not look up the cardholder to make a one-time card; nothing was charged");
+    }
+    if (kyc.status !== "Approved" || !kyc.customerId || !kyc.kycToken) {
+      await mark("failed", `KYC status ${kyc.status}`);
+      throw new AppError(409, "the cardholder is not approved, so no one-time card can be made; nothing was charged");
+    }
+    let out: { cardId: string; detailsCaptured: boolean };
+    try {
+      out = await this.d.cards.issueOneTime({ customerId: kyc.customerId, kycToken: kyc.kycToken }, amountCents, `ot-${spendId}`, { capture: opts.needDetails });
+    } catch (e) {
+      if (isDefiniteRefusal(e)) {
+        const why = e instanceof MidenApiError ? midenMessage(e) : errText(e);
+        await mark("failed", why.slice(0, 200));
+        throw new AppError(422, `could not make a one-time card (${why}); nothing was charged`);
+      }
+      // A timeout or lost answer: the card may exist (and hold the money). Never guess; a person decides.
+      await mark("needs_review", `issue answer lost: ${errText(e)}`.slice(0, 200));
+      this.log(`one-time card for spend ${spendId}: issue answer lost, flagged for review`);
+      throw new AppError(503, "the one-time card could not be confirmed; nothing was charged and the attempt is flagged for review");
+    }
+    if (opts.needDetails && !out.detailsCaptured) {
+      await mark("needs_review", "card issued but its details could not be captured", out.cardId);
+      throw new AppError(502, "the one-time card was made but its details were unavailable; nothing was charged and the card is flagged for review");
+    }
+    await mark("ready", null, out.cardId);
+    await pool.query("UPDATE app_spend SET charge_card_id = $2 WHERE spend_id = $1", [spendId, out.cardId]);
+    this.log(`one-time card ${out.cardId.slice(0, 8)} made for spend ${spendId}`);
+    return out.cardId;
   }
 
   // ---------- agents (agent side) ----------
@@ -642,6 +823,7 @@ export class AppService {
         "UPDATE app_spend SET status = $2, reason = $3, ledger_seq = COALESCE($4, ledger_seq), miden_auth_id = COALESCE($5, miden_auth_id) WHERE spend_id = $1 RETURNING *",
         [spendId, status, reason, extra.seq ?? null, extra.auth ?? null],
       );
+      this.emitSpend(spendId);
       return spendView(row.rows[0]);
     };
     // Daily limits were checked in openSpend (Postgres, shared by every process); this checks the rest and debits.
@@ -672,9 +854,17 @@ export class AppService {
       await this.d.wallets.voidSpend(spendId, verdict.tx);
       return finish("voided", "live card charging is not enabled: agents pay through the sandbox simulator only");
     }
+    let cardId: string;
+    try {
+      cardId = await this.chargeCardFor(p, spendId, r.amountCents, { needDetails: false });
+    } catch (e) {
+      if (!(e instanceof AppError)) throw e;
+      await this.d.wallets.voidSpend(spendId, verdict.tx);
+      return finish("voided", e.message);
+    }
     try {
       const authId = await this.d.lifecycle.simulateAuthorization(
-        { cardId: p.cardId, amountDollars: r.amountCents / 100, mcc: r.mcc, merchantName: r.merchant, mid: midFor(spendId) },
+        { cardId, amountDollars: r.amountCents / 100, mcc: r.mcc, merchantName: r.merchant, mid: midFor(spendId) },
         { reference: referenceFor(`auth:${spendId}`) },
       );
       return finish("approved", null, { seq: verdict.tx.seq, auth: authId ?? undefined });
@@ -714,11 +904,14 @@ export class AppService {
 
   private async reconcileSpend(s: Record<string, any>, lists: Map<string, Promise<CardTransaction[]>>): Promise<void> {
     const spendId = s.spend_id as string;
-    const settle = (status: SpendView["status"], reason: string | null, auth?: string) =>
-      this.d.pool.query(
+    const settle = async (status: SpendView["status"], reason: string | null, auth?: string) => {
+      const r = await this.d.pool.query(
         "UPDATE app_spend SET status = $2, reason = $3, miden_auth_id = COALESCE($4, miden_auth_id) WHERE spend_id = $1 AND status = 'processing'",
         [spendId, status, reason, auth ?? null],
       );
+      if (r.rowCount === 1) this.emitSpend(spendId);
+      return r;
+    };
     // Found by key, not ledger_seq: the debit can commit before its seq is saved on the row.
     const tx: LedgerTransaction | undefined = await this.d.ledger.findByKey(`spend:${spendId}`);
     if (!tx) {
@@ -733,9 +926,10 @@ export class AppService {
     if (s.ledger_seq === null) await this.d.pool.query("UPDATE app_spend SET ledger_seq = $2 WHERE spend_id = $1 AND status = 'processing'", [spendId, tx.seq]);
     let found: CardTransaction | undefined;
     if (this.d.sandbox) {
-      if (!lists.has(s.card_id)) lists.set(s.card_id, this.d.lifecycle.transactions(s.card_id, "Authorization", 100));
+      const onCard = (s.charge_card_id ?? s.card_id) as string;
+      if (!lists.has(onCard)) lists.set(onCard, this.d.lifecycle.transactions(onCard, "Authorization", 100));
       const mid = midFor(spendId);
-      found = (await lists.get(s.card_id)!).find((t) => t.merchantMid === mid);
+      found = (await lists.get(onCard)!).find((t) => t.merchantMid === mid);
     }
     const status = found?.transactionStatus ?? "";
     if (/^(approved|successful|settled)$/i.test(status)) {
@@ -773,12 +967,14 @@ export class AppService {
         "UPDATE app_spend SET status = 'approved', reason = NULL, miden_auth_id = COALESCE($2, miden_auth_id) WHERE spend_id = $1 AND status = 'processing'",
         [spendId, out.auth ?? null],
       );
+      if (r.rowCount === 1) this.emitSpend(spendId);
       return r.rowCount === 1;
     }
     // Close the row first, then undo the debit: two reconcilers racing cannot both refund.
     if (s.status === "processing") {
       const r = await this.d.pool.query("UPDATE app_spend SET status = 'voided', reason = $2 WHERE spend_id = $1 AND status = 'processing'", [spendId, out.reason]);
       if (r.rowCount !== 1) return false;
+      this.emitSpend(spendId);
     }
     const tx = await this.d.ledger.findByKey(`spend:${spendId}`);
     if (tx) await this.d.wallets.voidSpend(spendId, tx);

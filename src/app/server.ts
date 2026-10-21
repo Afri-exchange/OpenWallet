@@ -9,11 +9,12 @@ import { checkoutPage, type CheckoutService } from "./checkout.js";
 import { buildAgentMcpServer } from "./mcp.js";
 import { AppError, type AgentPrincipal, type AppService } from "./service.js";
 import type { SwapRequest, SwapService } from "../checkout-swap/swap.js";
+import type { DeveloperService } from "../developers/service.js";
 
 const WEB = join(dirname(fileURLToPath(import.meta.url)), "web");
 /** Page routes and the only files served under /assets. Anything else is a 404, so no path can leave WEB. */
-const PAGES: Record<string, string> = { "/": "index.html", "/docs": "docs.html", "/docs/checkout": "docs-checkout.html","/app": "app.html" };
-const ASSETS = new Set(["site.css", "site.js", "app.js", "docs.js", "home.js", "landing.js"]);
+const PAGES: Record<string, string> = { "/": "index.html", "/docs": "docs.html", "/docs/checkout": "docs-checkout.html","/app": "app.html", "/connect": "connect.html" };
+const ASSETS = new Set(["site.css", "site.js", "app.js", "docs.js", "home.js", "landing.js", "connect.js"]);
 const TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8" };
 // Scripts and styles only from ourselves; inline styles are allowed (generated markup uses style=""), inline scripts never.
 const CSP = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
@@ -102,15 +103,28 @@ function bearer(req: IncomingMessage): string | undefined {
  *   /merchant/v1/...       merchant checkout, balance and payout API, `Authorization: Bearer mk_...` (POST /merchant/v1/signup is open)
  *   /pay/<id>  /v1/checkouts/<id>   a checkout's public page and JSON (the unguessable id is the access)
  */
-export function createAppServer(app: AppService, opts: { allowedHosts: string[]; checkout?: CheckoutService; swap?: SwapService; log?: (m: string) => void }): Server {
+export function createAppServer(app: AppService, opts: { allowedHosts: string[]; checkout?: CheckoutService; swap?: SwapService; developers?: DeveloperService; log?: (m: string) => void }): Server {
   const log = opts.log ?? (() => undefined);
   const allowed = new Set(opts.allowedHosts.map((h) => h.toLowerCase()));
   const allowedOrigins = new Set([...allowed].map((h) => `http://${h}`));
 
-  const userOf = async (req: IncomingMessage): Promise<string> => {
+  // The owner API takes the owner's token (uk_) or a developer-issued session (us_, short-lived).
+  const userOf = async (req: IncomingMessage, opts2: { ownerTokenOnly?: boolean } = {}): Promise<string> => {
     const t = bearer(req);
-    const id = t && t.startsWith("uk_") ? await app.userByToken(t) : undefined;
+    const id = t && t.startsWith("uk_") ? await app.userByToken(t)
+      : t && t.startsWith("us_") && !opts2.ownerTokenOnly ? await app.userBySession(t)
+      : undefined;
     if (!id) throw new HttpError(401, "missing or invalid user token");
+    return id;
+  };
+  const developers = (): DeveloperService => {
+    if (!opts.developers) throw new HttpError(404, "the developer API is not enabled on this server");
+    return opts.developers;
+  };
+  const developerOf = async (req: IncomingMessage): Promise<string> => {
+    const t = bearer(req);
+    const id = t && t.startsWith("dk_") ? await developers().byKey(t) : undefined;
+    if (!id) throw new HttpError(401, "missing or invalid developer key");
     return id;
   };
   const agentOf = async (req: IncomingMessage): Promise<AgentPrincipal> => {
@@ -252,6 +266,39 @@ export function createAppServer(app: AppService, opts: { allowedHosts: string[];
       throw new HttpError(404, "not found");
     }
 
+    // ----- developer API -----
+    if (m === "POST" && path === "/developer/v1/signup") return send(res, 201, await developers().signup(await readJson(req)));
+    if (path.startsWith("/developer/v1/")) {
+      const dev = await developerOf(req);
+      const lim = Math.trunc(Number(url.searchParams.get("limit") ?? 20)) || 20;
+      if (m === "GET" && path === "/developer/v1/me") return send(res, 200, await developers().profile(dev));
+      if (m === "POST" && path === "/developer/v1/key") return send(res, 200, await developers().rotateKey(dev));
+      if (m === "POST" && path === "/developer/v1/settings") return send(res, 200, await developers().updateSettings(dev, await readJson(req)));
+      if (m === "GET" && path === "/developer/v1/events") return send(res, 200, await developers().listEvents(dev, lim));
+      if (m === "POST" && path === "/developer/v1/users") {
+        const r = await developers().createUser(dev, await readJson(req));
+        return send(res, r.created ? 201 : 200, r.user);
+      }
+      if (m === "GET" && path === "/developer/v1/users") return send(res, 200, await developers().listUsers(dev, lim, url.searchParams.get("externalId") ?? undefined));
+      const du = /^\/developer\/v1\/users\/(u_[a-f0-9]+)(?:\/(sessions|agents)(?:\/(a_[a-f0-9]+)\/(fund|reclaim|revoke|limits))?)?$/.exec(path);
+      if (du) {
+        const [, uid, sub, aid, action] = du as unknown as [string, string, string | undefined, string | undefined, string | undefined];
+        if (!sub && m === "GET") return send(res, 200, await developers().userView(dev, uid));
+        if (sub === "sessions" && m === "DELETE") return send(res, 200, await developers().revokeSessions(dev, uid));
+        if (sub === "sessions" && m === "POST") return send(res, 201, await developers().createSession(dev, uid, (await readJson(req)).ttlSeconds));
+        if (sub === "agents" && !aid && m === "POST") return send(res, 201, await developers().createAgent(dev, uid, await readJson(req)));
+        if (sub === "agents" && aid && action && m === "POST") {
+          const b = await readJson(req);
+          if (action === "limits") return send(res, 200, await developers().updateAgentLimits(dev, uid, aid, b));
+          if (action === "fund") await developers().fundAgent(dev, uid, aid, b.amountCents, b.key);
+          if (action === "reclaim") return send(res, 200, { reclaimedCents: await developers().reclaimAgent(dev, uid, aid, b.amountCents) });
+          if (action === "revoke") await developers().revokeAgent(dev, uid, aid);
+          return send(res, 200, { ok: true });
+        }
+      }
+      throw new HttpError(404, "not found");
+    }
+
     // ----- owner API -----
     if (m === "POST" && path === "/api/signup") {
       const b = await readJson(req);
@@ -260,7 +307,11 @@ export function createAppServer(app: AppService, opts: { allowedHosts: string[];
     if (path.startsWith("/api/me")) {
       const userId = await userOf(req);
       if (m === "GET" && path === "/api/me") return send(res, 200, await app.overview(userId));
-      if (m === "POST" && path === "/api/me/token") return send(res, 200, await app.rotateToken(userId));
+      if (m === "POST" && path === "/api/me/token") {
+        // A session must not mint a permanent token.
+        await userOf(req, { ownerTokenOnly: true });
+        return send(res, 200, await app.rotateToken(userId));
+      }
       if (m === "POST" && path === "/api/me/kyc") return send(res, 200, await app.submitKyc(userId, await readJson(req)));
       if (m === "POST" && path === "/api/me/refresh") {
         await app.refresh(userId);
