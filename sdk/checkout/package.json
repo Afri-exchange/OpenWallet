@@ -1,0 +1,22 @@
+{
+  "name": "@agent-cards/checkout",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Accept payments from AI agents that hold an Agent Card wallet",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  }
+}

@@ -1,0 +1,348 @@
+import { test, after, before } from "node:test";
+import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
+import pg from "pg";
+import { AgentWallets } from "../src/agents/wallets.js";
+import { PgDepositAddresses } from "../src/chain/pg.js";
+import { DEFAULT_TIERS } from "../src/cards/tiers.js";
+import { Ledger, accounts } from "../src/ledger/ledger.js";
+import { PgStore } from "../src/ledger/pg-store.js";
+import { AppError, AppService, type AppDeps } from "../src/app/service.js";
+import { MemoryCardVault, type CardDetails } from "../src/vault/vault.js";
+import { parseUsdCents, scrub, type CheckoutFiller, type FillRequest, type FillResult } from "../src/checkout-swap/filler.js";
+import { cardFree, PlaywrightFiller } from "../src/checkout-swap/playwright-filler.js";
+import { startCheckoutFixture, type CheckoutFixture } from "../src/checkout-swap/fixture.js";
+import { parseCardTime, SwapService, swapConfigFromEnv, type SwapConfig } from "../src/checkout-swap/swap.js";
+
+const TEST_CARD: CardDetails = { pan: "4242424242424242", cvv: "123", expMonth: 12, expYear: 2030, nameOnCard: "Ada Test", billingZip: "94000" };
+const card = (): CardDetails => ({ ...TEST_CARD });
+
+// ---------- pure helpers ----------
+
+test("swap: parseUsdCents reads Stripe-style totals", () => {
+  assert.equal(parseUsdCents("$10.00"), 1000);
+  assert.equal(parseUsdCents("US$1,234.5"), 123450);
+  assert.equal(parseUsdCents("Total due 9.99 USD"), 999);
+  assert.equal(parseUsdCents("€10.00"), undefined);
+  assert.equal(parseUsdCents(""), undefined);
+});
+
+test("swap: parseCardTime treats Miden's zone-less times as UTC", () => {
+  assert.equal(parseCardTime("2026-10-19T14:11:54.689346"), Date.parse("2026-10-19T14:11:54.689Z"));
+  assert.equal(parseCardTime("2026-10-19T14:11:54Z"), Date.parse("2026-10-19T14:11:54Z"));
+  assert.equal(parseCardTime(undefined), undefined);
+});
+
+test("swap: scrub blanks every field; cardFree strips card values from error text", () => {
+  const c = card();
+  scrub(c);
+  assert.deepEqual(c, { pan: "", cvv: "", expMonth: 0, expYear: 0, nameOnCard: "", billingZip: "" });
+  const msg = cardFree(new Error(`fill failed for 4242424242424242 cvc 123 and 4242 4242 4242 4242`), { card: card() });
+  assert.doesNotMatch(msg, /4242424242424242|4242 4242 4242 4242|\b123\b/);
+});
+
+test("swap: config defaults to off, Stripe only, $10 cap", () => {
+  const c = swapConfigFromEnv({});
+  assert.deepEqual(c, { enabled: false, maxAmountCents: 1000, allowedHosts: ["checkout.stripe.com", "buy.stripe.com"], insecureHosts: [], fallbackEmail: undefined });
+  assert.throws(() => swapConfigFromEnv({ SWAP_MAX_CENTS: "ten" }), /SWAP_MAX_CENTS/);
+});
+
+// ---------- the real browser against the local Stripe-like fixture ----------
+
+const browserSkip = process.env.SKIP_BROWSER === "1";
+let fx: CheckoutFixture | undefined;
+let browser: import("playwright-core").Browser | undefined;
+before(async () => {
+  if (browserSkip) return;
+  fx = await startCheckoutFixture();
+  browser = await (await import("playwright-core")).chromium.launch();
+});
+after(async () => {
+  await browser?.close();
+  await fx?.close();
+});
+const fillAt = (scenario: string, amount = 1000, expected = 1000, resultTimeoutMs = 5_000) =>
+  new PlaywrightFiller({ browser, resultTimeoutMs, loadTimeoutMs: 10_000 }).fill({ url: fx!.url(scenario, amount), expectedAmountCents: expected, card: card(), email: "owner@example.com" });
+
+test("filler: success redirect, complete state and accordion all count as succeeded", { skip: browserSkip }, async () => {
+  for (const s of ["success", "complete", "accordion"]) {
+    const r = await fillAt(s);
+    assert.equal(r.outcome, "succeeded", s);
+    assert.equal(r.submitted, true);
+    assert.equal(r.pageAmountCents, 1000);
+  }
+  assert.deepEqual(fx!.submissions.slice(-3).map((x) => x.last4), ["4242", "4242", "4242"], "the card reached the form");
+});
+
+test("filler: a page total that differs stops before any card data is typed", { skip: browserSkip }, async () => {
+  const before = fx!.submissions.length;
+  const r = await fillAt("success", 1200, 1000);
+  assert.deepEqual({ outcome: r.outcome, submitted: r.submitted, page: r.pageAmountCents }, { outcome: "amount_mismatch", submitted: false, page: 1200 });
+  assert.equal(fx!.submissions.length, before);
+  assert.equal((await fillAt("nototal")).outcome, "unsupported_page");
+});
+
+test("filler: decline, captcha, 3-D Secure and a silent page are told apart", { skip: browserSkip }, async () => {
+  const d = await fillAt("decline");
+  assert.deepEqual([d.outcome, d.submitted], ["declined", true]);
+  const c = await fillAt("captcha");
+  assert.deepEqual([c.outcome, c.submitted], ["captcha", false], "a bot check up front: never submitted");
+  const t = await fillAt("three_ds");
+  assert.deepEqual([t.outcome, t.submitted], ["three_ds", true]);
+  const h = await fillAt("hang", 1000, 1000, 1_500);
+  assert.deepEqual([h.outcome, h.submitted], ["error", true], "no answer after submit: unknown, never 'failed'");
+  for (const r of [d, c, t, h]) assert.doesNotMatch(JSON.stringify(r), /4242424242424242|"123"/);
+});
+
+test("filler: a session that needs a full billing address is filled from the vault, or refused before paying", { skip: browserSkip }, async () => {
+  const before = fx!.submissions.length;
+  const bare = await fillAt("address");
+  assert.deepEqual([bare.outcome, bare.submitted], ["unsupported_page", false], "no address on file: stop before pressing pay");
+  assert.match(bare.detail!, /billing address/);
+  assert.equal(fx!.submissions.length, before, "nothing sent");
+  const withAddr = await new PlaywrightFiller({ browser, resultTimeoutMs: 5_000, loadTimeoutMs: 10_000 }).fill({
+    url: fx!.url("address", 1000), expectedAmountCents: 1000, email: "owner@example.com",
+    card: { ...card(), billingAddress: { line1: "1 Market St", city: "San Francisco", state: "CA", country: "US" } },
+  });
+  assert.deepEqual([withAddr.outcome, withAddr.submitted], ["succeeded", true]);
+});
+
+// ---------- SwapService against Postgres, with a fake filler ----------
+
+const databaseUrl = process.env.DATABASE_URL;
+const skip = !databaseUrl;
+const admin = databaseUrl ? new pg.Pool({ connectionString: databaseUrl, max: 2 }) : undefined;
+const pools: pg.Pool[] = [];
+const schemas: string[] = [];
+after(async () => {
+  for (const p of pools) await p.end();
+  for (const s of schemas) await admin!.query(`DROP SCHEMA ${s} CASCADE`);
+  await admin?.end();
+});
+
+const KYC = {
+  firstName: "Ada", lastName: "Test", dateOfBirth: "1990-01-31", idType: "PASSPORT", idNumber: "X1", phone: "+2348000000000", email: "a@example.com",
+  idFrontImage: "data:image/png;base64,AAAA", address: { address1: "1 St", city: "Lagos", state: "Lagos", zipcode: "1", country: "NG" },
+};
+
+class FakeFiller implements CheckoutFiller {
+  next: FillResult = { outcome: "succeeded", submitted: true };
+  calls: FillRequest[] = [];
+  async fill(req: FillRequest): Promise<FillResult> {
+    this.calls.push(req);
+    assert.equal(req.card.pan, TEST_CARD.pan, "the filler gets the real card while it runs");
+    return this.next;
+  }
+}
+
+async function setup(cfg: Partial<SwapConfig> = {}) {
+  const schema = `t_${randomBytes(6).toString("hex")}`;
+  await admin!.query(`CREATE SCHEMA ${schema}`);
+  schemas.push(schema);
+  const pool = new pg.Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 6 });
+  pools.push(pool);
+  await new PgStore(pool).migrate();
+  const ledger = new Ledger(undefined, new PgStore(pool));
+  const txns: Record<string, unknown>[] = [];
+  const lifecycle = {
+    kycStatus: async () => ({ status: "Approved", customerId: "cust-1", kycToken: "kt" }),
+    cardBalance: async () => 0,
+    simulateAuthorization: async () => { throw new Error("a swap must never use the simulator"); },
+    transactions: async (cardId: string, type?: string) => txns.filter((t) => t.cardId === cardId && (!type || t.transactionType === type)),
+  };
+  let clock = Date.now();
+  const app = new AppService({
+    pool, ledger, wallets: new AgentWallets(ledger), addresses: new PgDepositAddresses(pool, "base-sepolia"),
+    deriveAddress: (i: number) => `0x${i.toString(16).padStart(40, "0")}`, tiers: DEFAULT_TIERS, chain: "base-sepolia", sandbox: true, simulatedDeposits: true,
+    miden: { request: async () => ({ isSuccessful: true, responseCode: "00", kycStatus: "Initiated" }) },
+    lifecycle,
+    cards: { issue: async (_a: string, policy: unknown) => ({ id: `card-${randomBytes(3).toString("hex")}`, agentId: "x", policy, detailsCaptured: true }) },
+    funding: { fund: async () => ({ id: "m1", status: "confirmed" as const }) },
+    now: () => new Date(clock),
+  } as unknown as AppDeps);
+  const { userId } = await app.signup(`u${randomBytes(3).toString("hex")}@example.com`);
+  await app.submitKyc(userId, KYC);
+  await app.simulateDeposit(userId, 5_000);
+  await app.fundPending();
+  const a = await app.createAgent(userId, { name: "bot", perTransactionCents: 1_500, dailyCents: 3_000 });
+  await app.fundAgent(userId, a.agentId, 2_000);
+  const p = (await app.agentByToken(a.token))!;
+  const vault = new MemoryCardVault();
+  await vault.put(p.cardId, card());
+  const filler = new FakeFiller();
+  const swap = new SwapService({
+    pool, app, vault, filler, lifecycle, now: () => new Date(clock),
+    config: { enabled: true, maxAmountCents: 1_000, allowedHosts: ["checkout.stripe.com"], ...cfg },
+  });
+  const balance = () => ledger.balance(accounts.agent(p.cardId, a.agentId));
+  const age = async (ms: number) => {
+    clock += ms;
+    await pool.query("UPDATE app_checkout_swap SET created_at = created_at - make_interval(secs => $1), updated_at = updated_at - make_interval(secs => $1)", [ms / 1000]);
+  };
+  return { app, swap, filler, vault, pool, p, balance, txns, age };
+}
+
+const URL1 = "https://checkout.stripe.com/c/pay/cs_test_a1";
+const req = (over: Record<string, unknown> = {}) => ({ checkoutUrl: URL1, amountCents: 1_000, merchant: "Acme", idempotencyKey: "k1", ...over });
+
+test("swap: pays, debits the agent once, audits the reveal, scrubs the card", { skip }, async () => {
+  const s = await setup();
+  const [a, b] = await Promise.all([s.swap.pay(s.p, req()), s.swap.pay(s.p, req())]);
+  assert.equal(a.status, "paid");
+  assert.equal(b.swapId, a.swapId);
+  assert.equal(s.filler.calls.length, 1, "filled once");
+  assert.equal((await s.swap.pay(s.p, req())).status, "paid");
+  assert.equal(s.filler.calls.length, 1, "a retry never fills again");
+  assert.equal(await s.balance(), 1_000);
+  assert.equal(a.payment?.status, "approved");
+  assert.equal(s.filler.calls[0]!.card.pan, "", "details scrubbed after the attempt");
+  assert.equal(s.filler.calls[0]!.email.endsWith("@example.com"), true, "receipt goes to the owner");
+  assert.deepEqual(s.vault.audit.filter((x) => x.action === "reveal").map((x) => x.purpose), [`checkout:${a.swapId}`]);
+  assert.doesNotMatch(JSON.stringify(a), /4242|cvv|pan/i);
+  await assert.rejects(s.swap.pay(s.p, req({ amountCents: 900 })), (e: { status?: number }) => e.status === 409, "same key, different payment");
+});
+
+test("swap: refuses before reserving anything: off, over the cap, wrong host, no key, no card on file", { skip }, async () => {
+  const s = await setup();
+  const st = (n: number) => (e: { status?: number }) => e.status === n;
+  await assert.rejects(s.swap.pay(s.p, req({ amountCents: 1_001 })), st(400));
+  await assert.rejects(s.swap.pay(s.p, req({ checkoutUrl: "https://evil.example/c/pay/x" })), st(400));
+  await assert.rejects(s.swap.pay(s.p, req({ checkoutUrl: "http://checkout.stripe.com/c/pay/x" })), st(400));
+  await assert.rejects(s.swap.pay(s.p, req({ idempotencyKey: "" })), st(400));
+  const off = new SwapService({ ...(s.swap as any).d, config: { enabled: false, maxAmountCents: 1000, allowedHosts: ["checkout.stripe.com"] } });
+  await assert.rejects(off.pay(s.p, req()), st(403));
+  const empty = new SwapService({ ...(s.swap as any).d, vault: new MemoryCardVault() });
+  await assert.rejects(empty.pay(s.p, req()), /not on file/);
+  assert.equal(s.filler.calls.length, 0);
+  assert.equal(await s.balance(), 2_000);
+  assert.equal((await s.pool.query("SELECT count(*)::int AS n FROM app_spend")).rows[0].n, 0);
+});
+
+test("swap: an agent cannot pre-spend under a swap key, and the agent's limits still apply", { skip }, async () => {
+  const s = await setup({ maxAmountCents: 5_000 });
+  await assert.rejects(s.app.pay(s.p, { amountCents: 1, merchant: "x", idempotencyKey: "checkout:swap:sw_x" }), (e: { status?: number }) => e.status === 400);
+  const r = await s.swap.pay(s.p, req({ amountCents: 1_600 }));
+  assert.equal(r.status, "failed");
+  assert.match(r.payment!.reason!, /per-transaction/);
+  assert.equal(s.filler.calls.length, 0, "the card is never revealed when limits say no");
+  assert.equal(s.vault.audit.filter((x) => x.action === "reveal").length, 0);
+});
+
+test("swap: nothing submitted (price mismatch, bot check) undoes the debit; a challenge is final under its key", { skip }, async () => {
+  const s = await setup();
+  s.filler.next = { outcome: "amount_mismatch", submitted: false, pageAmountCents: 1200, detail: "page total $12.00, expected $10.00" };
+  const m = await s.swap.pay(s.p, req());
+  assert.equal(m.status, "failed");
+  assert.equal(m.payment!.status, "voided");
+  assert.match(m.payment!.reason!, /price/);
+  assert.equal(await s.balance(), 2_000);
+
+  s.filler.next = { outcome: "captcha", submitted: false };
+  const c = await s.swap.pay(s.p, req({ idempotencyKey: "k2" }));
+  assert.equal(c.status, "challenge");
+  assert.equal(await s.balance(), 2_000);
+  s.filler.next = { outcome: "succeeded", submitted: true };
+  assert.equal((await s.swap.pay(s.p, req({ idempotencyKey: "k2" }))).status, "challenge", "never retried blind");
+  assert.equal(s.filler.calls.length, 2);
+});
+
+test("swap: a decline on the page voids; a 3-D Secure challenge holds the money until the card says", { skip }, async () => {
+  const s = await setup();
+  s.filler.next = { outcome: "declined", submitted: true };
+  assert.equal((await s.swap.pay(s.p, req())).status, "failed");
+  assert.equal(await s.balance(), 2_000);
+
+  s.filler.next = { outcome: "three_ds", submitted: true };
+  const t = await s.swap.pay(s.p, req({ idempotencyKey: "k2" }));
+  assert.equal(t.status, "challenge");
+  assert.equal(t.payment!.status, "processing");
+  assert.equal(await s.balance(), 1_000, "held");
+
+  await s.app.reconcileSpends();
+  assert.equal((await s.swap.get(s.p, t.swapId)).payment!.status, "processing", "AppService's own reconcile leaves swap spends alone");
+
+  // The card shows the authorization approved (the owner passed 3DS in time).
+  await s.age(90_000);
+  s.txns.push({ cardId: s.p.cardId, transactionType: "Authorization", transactionStatus: "Approved", transactionAmount: 10, transactionReference: "tx-1", authCode: "A1", transactionTime: new Date().toISOString().replace("Z", "") });
+  await s.swap.reconcile();
+  const done = await s.swap.get(s.p, t.swapId);
+  assert.equal(done.status, "paid");
+  assert.equal(done.payment!.status, "approved");
+  assert.equal(await s.balance(), 1_000);
+});
+
+test("swap: reconcile voids on a card decline, and flags ambiguity or silence for a person", { skip }, async () => {
+  const s = await setup();
+  const now = () => new Date().toISOString().replace("Z", "");
+  s.filler.next = { outcome: "error", submitted: true, detail: "timeout" };
+  const a = await s.swap.pay(s.p, req({ idempotencyKey: "a" }));
+  assert.equal(a.status, "processing");
+  await s.age(90_000);
+  s.txns.push({ cardId: s.p.cardId, transactionType: "Authorization", transactionStatus: "Declined", transactionAmount: 10, transactionReference: "tx-d", transactionTime: now() });
+  await s.swap.reconcile();
+  assert.equal((await s.swap.get(s.p, a.swapId)).status, "failed");
+  assert.equal(await s.balance(), 2_000, "refunded on a definite decline");
+
+  const b = await s.swap.pay(s.p, req({ idempotencyKey: "b" }));
+  await s.age(31 * 60_000);
+  await s.swap.reconcile();
+  const bv = await s.swap.get(s.p, b.swapId);
+  assert.equal(bv.status, "needs_review");
+  assert.match(bv.payment!.reason!, /needs review/);
+  assert.equal(await s.balance(), 1_000, "silence never refunds");
+
+  const c = await s.swap.pay(s.p, req({ idempotencyKey: "c" }));
+  await s.age(90_000);
+  for (const ref of ["tx-x", "tx-y"]) s.txns.push({ cardId: s.p.cardId, transactionType: "Authorization", transactionStatus: "Approved", transactionAmount: 10, transactionReference: ref, transactionTime: now() });
+  await s.swap.reconcile();
+  // Two unclaimed $10 authorizations could each be this payment: never guess.
+  assert.equal((await s.swap.get(s.p, c.swapId)).status, "needs_review");
+});
+
+test("swap: a paid swap is confirmed on the card, and a different merchant category is flagged (Kai's check)", { skip }, async () => {
+  const s = await setup();
+  const now = () => new Date().toISOString().replace("Z", "");
+  const a = await s.swap.pay(s.p, req({ idempotencyKey: "a", mcc: "5734" }));
+  assert.equal(a.status, "paid");
+  await s.age(90_000);
+  s.txns.push({ cardId: s.p.cardId, transactionType: "Authorization", transactionStatus: "Approved", transactionAmount: 10, transactionReference: "tx-a", merchantMcc: "5815", transactionTime: now() });
+  await s.swap.reconcile();
+  const av = await s.swap.get(s.p, a.swapId);
+  assert.equal(av.status, "paid");
+  assert.equal(av.underReview, "merchant category mismatch: declared 5734, card network saw 5815");
+  const row = (await s.pool.query("SELECT card_txn_ref, card_mcc FROM app_checkout_swap WHERE swap_id = $1", [a.swapId])).rows[0];
+  assert.deepEqual(row, { card_txn_ref: "tx-a", card_mcc: "5815" });
+
+  // Paid on the page, but nothing on the card after 30 minutes: a person looks. The money stays where it is.
+  const b = await s.swap.pay(s.p, req({ idempotencyKey: "b" }));
+  await s.age(31 * 60_000);
+  await s.swap.reconcile();
+  assert.match((await s.swap.get(s.p, b.swapId)).underReview!, /no matching authorization/);
+  assert.equal(await s.balance(), 0);
+});
+
+test("swap: a second payment of the same amount on the card waits while the first is unsettled (Kai's check)", { skip }, async () => {
+  const s = await setup();
+  const now = () => new Date().toISOString().replace("Z", "");
+  s.filler.next = { outcome: "three_ds", submitted: true };
+  const a = await s.swap.pay(s.p, req({ idempotencyKey: "a", amountCents: 400 }));
+  assert.equal(a.status, "challenge");
+  s.filler.next = { outcome: "succeeded", submitted: true };
+  await assert.rejects(s.swap.pay(s.p, req({ idempotencyKey: "b", amountCents: 400 })), (e: AppError) => e.status === 409 && /still being confirmed/.test(e.message));
+  assert.equal((await s.pool.query("SELECT count(*)::int AS n FROM app_checkout_swap")).rows[0].n, 1, "nothing written for the refused one");
+  assert.equal((await s.swap.pay(s.p, req({ idempotencyKey: "a", amountCents: 400 }))).swapId, a.swapId, "a retry under the same key is never refused");
+  assert.equal((await s.swap.pay(s.p, req({ idempotencyKey: "c", amountCents: 500 }))).status, "paid", "a different amount is not held up");
+
+  // Left for a person, the first no longer blocks; but a lone authorization that either could own is not guessed.
+  await s.pool.query("UPDATE app_checkout_swap SET status = 'needs_review' WHERE swap_id = $1", [a.swapId]);
+  s.filler.next = { outcome: "error", submitted: true, detail: "timeout" };
+  const b = await s.swap.pay(s.p, req({ idempotencyKey: "b", amountCents: 400 }));
+  assert.equal(b.status, "processing");
+  await s.age(90_000);
+  s.txns.push({ cardId: s.p.cardId, transactionType: "Authorization", transactionStatus: "Approved", transactionAmount: 4, transactionReference: "tx-4", transactionTime: now() });
+  await s.swap.reconcile();
+  const bv = await s.swap.get(s.p, b.swapId);
+  assert.equal(bv.status, "needs_review");
+  assert.match(bv.payment!.reason!, /another open payment/);
+  assert.equal((await s.pool.query("SELECT count(*)::int AS n FROM app_checkout_swap WHERE card_txn_ref = 'tx-4'")).rows[0].n, 0, "unclaimed");
+});
