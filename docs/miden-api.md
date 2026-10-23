@@ -173,3 +173,7 @@ We assumed Miden does not accept stablecoins. The docs say otherwise in places: 
 - `POST /api/v1/mock/authorization` is **NOT idempotent**: replaying the same `Reference` header charged the card a second time. Never re-send it after a timeout.
 - The `Reference` header does not come back: the card's `Authorization` transaction has `transactionReference: null`.
 - The body's `mid` comes back verbatim as `merchantMid` (tried `900000123456789`), and `authCode` is the first 12 hex digits of `authorizationId` without dashes. `src/app/service.ts` sends a per-spend `mid` (`midFor`) so a payment whose answer was lost can be found exactly. Rows also carry `transactionTime` (UTC, no zone suffix) and `balanceAfterTransaction`.
+
+## Request signing (quick reference)
+
+`Signature` = base64 of the **hex** SHA-1 string over `METHOD&urlencode(fullUrl)&reference&clientId&clientSecret`. The signed URL includes the query string. Confirmed against the sandbox on 2026-10-19. Code: `src/miden/signature.ts`.

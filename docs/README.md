@@ -13,6 +13,9 @@ Written 2026-10-19 from the code in the working tree (Mira is still building par
 | [deposit-watcher.md](deposit-watcher.md) | The Base USDC watcher: config, tick loop, units and dust, idempotency, deposit addresses, holding-to-card funding, open items |
 | [sandbox-wallets.md](sandbox-wallets.md) | Our own HD deposit wallet for the demo, address allocation, step-by-step demo setup, what is deliberately missing |
 | [finance-data.md](finance-data.md) | Ledger design, accounts and kinds, Postgres tables, write ordering, what we do and do not store |
+| [checkout-payouts.md](checkout-payouts.md) | Checkout, settlement, merchant payouts, and what blocks mainnet |
+| [ops.md](ops.md) | Runbooks: a checkout or payout held for review |
+| [production-gaps.md](production-gaps.md) | Not production-ready items and the numbered open-items list |
 | [miden-api.md](miden-api.md) | What the Miden Workspace API docs say and what the sandbox confirmed |
 
-The top-level [README](../README.md) has layout, configuration and the numbered open-items list.
+The top-level [README](../README.md) has a short overview, configuration and layout.
