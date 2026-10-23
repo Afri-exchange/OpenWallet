@@ -20,6 +20,7 @@ import { AppService } from "./service.js";
 import { PgCardVault, vaultKeyFromEnv } from "../vault/vault.js";
 import { SwapService, swapConfigFromEnv } from "../checkout-swap/swap.js";
 import { RoutingFiller } from "../checkout-swap/router-filler.js";
+import { DeveloperService } from "../developers/service.js";
 
 const env = process.env;
 const need = (k: string) => {
@@ -64,11 +65,17 @@ const wallets = new AgentWallets(ledger);
 const addresses = new PgDepositAddresses(pool, chain);
 const hd = HdDepositWallet.loadOrCreate(env.DEPOSIT_WALLET_FILE ?? ".sandbox-wallet.json");
 
+// The developer service needs the app, and the app reports events to it: tie the knot with a late binding.
+let developersRef: DeveloperService | undefined;
 const app = new AppService({
   pool, ledger, miden, lifecycle, cards, funding, wallets, addresses,
   deriveAddress: (i) => hd.address(i), tiers: DEFAULT_TIERS, chain, sandbox, simulatedDeposits, log,
+  onEvent: (userId, type, data) => developersRef?.onEvent(userId, type, data) ?? Promise.resolve(),
 });
 await app.restore();
+// Sandbox: developers may point webhooks at http://localhost. Real deployments (not sandbox) never do.
+const developers = new DeveloperService({ pool, app, allowLocalWebhooks: sandbox, publicUrl: env.PUBLIC_URL ?? `http://127.0.0.1:${PORT}`, log });
+developersRef = developers;
 // Merchant payouts: USDC on Base Sepolia from our payout account (m/44'/60'/1'/0/0). Fund it with test USDC
 // (faucet.circle.com, Base Sepolia) and a little Base Sepolia ETH for gas.
 const payoutAccount = hd.payoutAccount();
@@ -133,6 +140,8 @@ async function background(): Promise<void> {
   for (const userId of await app.pendingKycUsers()) await app.refresh(userId).catch((e) => log(`kyc ${userId}: ${(e as Error).message}`));
   await app.fundPending().catch((e) => log(`funding: ${(e as Error).message}`));
   await app.reconcileSpends().catch((e) => log(`reconcile: ${(e as Error).message}`));
+  // Not awaited: a slow webhook endpoint must not hold up reconcile and payouts (deliverDue is single-flight).
+  void developers.deliverDue().catch((e) => log(`webhooks: ${(e as Error).message}`));
   await swap?.reconcile().catch((e) => log(`swap reconcile: ${(e as Error).message}`));
   await checkout.sync().catch((e) => log(`checkouts: ${(e as Error).message}`));
   await payouts.tick().catch((e) => log(`payouts: ${(e as Error).message}`));
@@ -144,7 +153,7 @@ const allowedHosts = [`127.0.0.1:${PORT}`, `localhost:${PORT}`, `[::1]:${PORT}`,
 // there would silently receive our traffic (tokens, KYC). If either bind fails, refuse to run.
 const hosts = HOST === "127.0.0.1" ? ["127.0.0.1", "::1"] : [HOST];
 const servers = hosts.map((h) => {
-  const s = createAppServer(app, { allowedHosts, checkout, swap, log });
+  const s = createAppServer(app, { allowedHosts, checkout, swap, developers, log });
   s.on("error", (e) => {
     log(`cannot listen on [${h}]:${PORT}: ${e.message}. Is something else on that port?`);
     process.exit(1);

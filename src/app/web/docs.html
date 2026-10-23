@@ -50,7 +50,7 @@
 <a class="skip" href="#content">Skip to content</a>
 <header class="nav"><div class="wrap">
   <a class="brand" href="/"><span class="logo" aria-hidden="true"></span>Agent Cards</a>
-  <nav class="nav-links" aria-label="Main"><a class="keep" href="/docs">Docs</a><a href="/app#developers">Developers</a></nav>
+  <nav class="nav-links" aria-label="Main"><a class="keep" href="/docs">Docs</a><a href="/docs#developer-demos">Demos</a><a href="/app#developers">Developers</a></nav>
   <span class="spacer"></span>
   <button class="icon-btn" type="button" data-theme-toggle aria-label="Toggle theme"></button>
   <a class="btn accent sm" href="/app">Dashboard ›</a>
@@ -76,6 +76,7 @@
     <li data-k="400 401 404 409 status"><a href="#errors">Errors</a></li>
     <li data-k="quick full cap daily"><a href="#limits">Limits &amp; tiers</a></li>
     <li data-k="usdc base sepolia ethereum faucet deposit"><a href="#funding">Funding &amp; networks</a></li>
+    <li data-k="developer demos examples privacy webhook connect scripts"><a href="#developer-demos">Developer demos</a></li>
     <li data-k="faq sandbox questions"><a href="#faq">Sandbox notes &amp; FAQ</a></li>
   </ul>
   <p id="none" class="muted small" hidden style="padding:8px 10px">No matches.</p>
@@ -282,6 +283,19 @@ curl -s <span class="s">&lt;origin&gt;/api/me/agents/a_1234abcd/fund</span> -H <
 <li>1 USDC = $1.00, credited in whole cents. Each transfer is credited once.</li>
 <li>No test USDC? <b>Simulate deposit</b> (max $1,000), labelled <i>simulated</i>.</li>
 </ul>
+
+<h2 id="developer-demos">Developer demos</h2>
+<p>Building a product where each of your users gets a card and your agents spend from it? These scripts in the repo run the developer API end to end. Run them from the repo root with the sandbox service up (<code>scripts/sandbox-up.sh</code>). Full guide: <code>docs/developers.md</code>.</p>
+<div class="tw scroll"><table><thead><tr><th>Script</th><th>Shows</th></tr></thead><tbody>
+<tr><td><code>01-onboard.ts</code></td><td>Sign up, create a user, mint a <code>/connect</code> link, create and fund an agent with limits</td></tr>
+<tr><td><code>02-limits.ts</code></td><td>Each refusal, changing limits from your server, idempotent retry, reclaim, revoke</td></tr>
+<tr><td><code>03-privacy.ts</code></td><td>Privacy mode: a fresh one-time card for every payment</td></tr>
+<tr><td><code>agent-mcp.ts</code></td><td>An agent paying over MCP with its <code>ak_</code> token</td></tr>
+<tr><td><code>webhook-receiver.ts</code></td><td>Verify the signature, dedupe on the event id, handle each event</td></tr>
+<tr><td><code>webhook-verify.test.ts</code></td><td>Offline tests of the signature check</td></tr></tbody></table></div>
+<div class="code" data-lang="shell"><pre>node --import tsx <span class="s">examples/developer/01-onboard.ts</span>
+node --env-file=examples/developer/.env.developer-demo --import tsx <span class="s">examples/developer/02-limits.ts</span></pre></div>
+<div class="note warn"><p>The first demo saves your keys to <code>examples/developer/.env.developer-demo</code> (git-ignored, never printed). Demos 1 to 4 move a few dollars of sandbox money. They use a dummy identity in place of the hosted KYC page, so copy only the API calls into a real integration. Details: <code>examples/developer/README.md</code>.</p></div>
 
 <h2 id="faq">Sandbox notes &amp; FAQ</h2>
 <h3>Is this real money?</h3><p>No. Miden sandbox card, simulated authorizations, testnet USDC.</p>

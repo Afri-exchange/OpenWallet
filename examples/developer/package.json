@@ -1,0 +1,9 @@
+{
+  "name": "agent-cards-example-developer",
+  "private": true,
+  "type": "module",
+  "description": "Developer-layer demos: onboarding, hosted connect, agent limits, privacy mode, signed webhooks, MCP agent",
+  "scripts": {
+    "test": "node --import tsx --test webhook-verify.test.ts"
+  }
+}

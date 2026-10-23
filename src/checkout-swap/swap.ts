@@ -40,8 +40,11 @@ export interface SwapDeps {
     pay(p: AgentPrincipal, req: PayRequest, opts: { internal: true; charge: Charger }): Promise<SpendView>;
     resolveSwapSpend(spendId: string, out: { status: "approved"; auth?: string } | { status: "voided"; reason: string }): Promise<boolean>;
     noteSpend(spendId: string, reason: string): Promise<void>;
+    /** The user's own card, or in privacy mode a one-time card made for this payment. */
+    chargeCardFor(p: AgentPrincipal, spendId: string, amountCents: number, opts: { needDetails: boolean }): Promise<string>;
+    privacyMode(userId: string): Promise<boolean>;
   };
-  vault: Pick<CardVault, "reveal" | "has">;
+  vault: Pick<CardVault, "reveal" | "has" | "discard">;
   filler: CheckoutFiller;
   lifecycle: { transactions(cardId: string, type?: string, pageSize?: number): Promise<CardTransaction[]> };
   config: SwapConfig;
@@ -189,9 +192,15 @@ export class SwapService {
     const charge: Charger = (spendId) => this.serialized(async (): Promise<ChargeOutcome> => {
       await this.d.pool.query("UPDATE app_checkout_swap SET status = 'filling', spend_id = $2, updated_at = now() WHERE swap_id = $1", [swapId, spendId]);
       let card: CardDetails | null = null;
+      let chargeCardId = p.cardId;
       try {
-        // As late as possible: after the debit, right before the page.
-        card = await this.d.vault.reveal(p.cardId, `checkout:${swapId}`);
+        // As late as possible: after the debit, right before the page. In privacy mode this is where the one-time
+        // card is made, so a payment that never gets this far never costs a card.
+        chargeCardId = await this.d.app.chargeCardFor(p, spendId, amountCents, { needDetails: true });
+        if (chargeCardId !== p.cardId) {
+          await this.d.pool.query("UPDATE app_checkout_swap SET charge_card_id = $2, updated_at = now() WHERE swap_id = $1", [swapId, chargeCardId]);
+        }
+        card = await this.d.vault.reveal(chargeCardId, `checkout:${swapId}`);
         if (!card) {
           fill = { outcome: "error", submitted: false, detail: "card details not on file" };
           return { kind: "refused", reason: "this card's details are not on file; nothing was charged" };
@@ -200,10 +209,13 @@ export class SwapService {
       } catch (e) {
         // The filler reports its own errors; this is the vault or something unexpected, before any submit.
         fill = { outcome: "error", submitted: false, detail: errText(e).slice(0, 200) };
-        return { kind: "refused", reason: "could not start the checkout; nothing was charged" };
+        // AppError messages are written for the caller (e.g. why a one-time card could not be made).
+        return { kind: "refused", reason: e instanceof AppError ? e.message : "could not start the checkout; nothing was charged" };
       } finally {
         scrub(card);
         card = null;
+        // A one-time card is single use: once the page has had it, nothing here needs its details again.
+        if (chargeCardId !== p.cardId) await this.d.vault.discard(chargeCardId, `checkout:${swapId}:done`).catch((e) => this.log(`swap ${swapId}: could not discard the one-time card's details: ${errText(e)}`));
       }
       await this.d.pool.query(
         "UPDATE app_checkout_swap SET outcome = $2, detail = $3, submitted = $4, updated_at = now() WHERE swap_id = $1",
@@ -284,11 +296,12 @@ export class SwapService {
 
   /** Unclaimed Authorizations on the swap's card that could be its charge: same amount, not before it started. */
   private async candidates(s: Record<string, any>, lists: Map<string, Promise<CardTransaction[]>>): Promise<CardTransaction[]> {
-    if (!lists.has(s.card_id)) lists.set(s.card_id, this.d.lifecycle.transactions(s.card_id, "Authorization", 100));
+    const onCard = (s.charge_card_id ?? s.card_id) as string;
+    if (!lists.has(onCard)) lists.set(onCard, this.d.lifecycle.transactions(onCard, "Authorization", 100));
     const claimed = new Set((await this.d.pool.query("SELECT card_txn_ref FROM app_checkout_swap WHERE card_id = $1 AND card_txn_ref IS NOT NULL", [s.card_id])).rows.map((r) => r.card_txn_ref));
     const from = new Date(s.created_at).getTime() - MATCH_SKEW_MS;
     const amount = Number(s.amount_cents);
-    return (await lists.get(s.card_id)!).filter((t) => {
+    return (await lists.get(onCard)!).filter((t) => {
       const ref = txnRef(t);
       const at = parseCardTime(t.transactionTime);
       return ref !== undefined && !claimed.has(ref) && Math.round((t.transactionAmount ?? NaN) * 100) === amount && at !== undefined && at >= from;
@@ -305,7 +318,8 @@ export class SwapService {
     try {
       await c.query("BEGIN");
       await c.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`swap:${p.cardId}:${r.amountCents}`]);
-      const busy = (await c.query(
+      // Privacy mode charges a card of its own per payment, so same-amount payments cannot be confused with each other.
+      const busy = (await this.d.app.privacyMode(p.userId)) ? 0 : (await c.query(
         `SELECT 1 FROM app_checkout_swap x LEFT JOIN app_spend s ON s.spend_id = x.spend_id
          WHERE x.card_id = $1 AND x.amount_cents = $2 AND NOT (x.agent_id = $3 AND x.idempotency_key = $4)
            AND x.created_at >= $5
@@ -339,6 +353,8 @@ export class SwapService {
    * time are all we can match on; when two swaps fit, neither settles on its own.
    */
   private async hasRival(s: Record<string, any>, at: number | undefined): Promise<boolean> {
+    // A one-time card carries only this payment's authorization: no other payment can be mistaken for it.
+    if (s.charge_card_id) return false;
     if (at === undefined) return true;
     const r = await this.d.pool.query(
       `SELECT 1 FROM app_checkout_swap x LEFT JOIN app_spend p ON p.spend_id = x.spend_id

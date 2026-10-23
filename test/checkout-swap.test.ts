@@ -7,6 +7,7 @@ import { PgDepositAddresses } from "../src/chain/pg.js";
 import { DEFAULT_TIERS } from "../src/cards/tiers.js";
 import { Ledger, accounts } from "../src/ledger/ledger.js";
 import { PgStore } from "../src/ledger/pg-store.js";
+import { MidenApiError } from "../src/miden/client.js";
 import { AppError, AppService, type AppDeps } from "../src/app/service.js";
 import { MemoryCardVault, type CardDetails } from "../src/vault/vault.js";
 import { parseUsdCents, scrub, type CheckoutFiller, type FillRequest, type FillResult } from "../src/checkout-swap/filler.js";
@@ -16,6 +17,7 @@ import { parseCardTime, SwapService, swapConfigFromEnv, type SwapConfig } from "
 
 const TEST_CARD: CardDetails = { pan: "4242424242424242", cvv: "123", expMonth: 12, expYear: 2030, nameOnCard: "Ada Test", billingZip: "94000" };
 const card = (): CardDetails => ({ ...TEST_CARD });
+const ONE_TIME_PAN = "5555555555554444";
 
 // ---------- pure helpers ----------
 
@@ -128,14 +130,16 @@ const KYC = {
 class FakeFiller implements CheckoutFiller {
   next: FillResult = { outcome: "succeeded", submitted: true };
   calls: FillRequest[] = [];
+  /** The card number the filler must be handed (a privacy user's one-time card has its own). */
+  expectPan = TEST_CARD.pan;
   async fill(req: FillRequest): Promise<FillResult> {
     this.calls.push(req);
-    assert.equal(req.card.pan, TEST_CARD.pan, "the filler gets the real card while it runs");
+    assert.equal(req.card.pan, this.expectPan, "the filler gets the real card while it runs");
     return this.next;
   }
 }
 
-async function setup(cfg: Partial<SwapConfig> = {}) {
+async function setup(cfg: Partial<SwapConfig> = {}, opts: { privacy?: boolean } = {}) {
   const schema = `t_${randomBytes(6).toString("hex")}`;
   await admin!.query(`CREATE SCHEMA ${schema}`);
   schemas.push(schema);
@@ -151,16 +155,28 @@ async function setup(cfg: Partial<SwapConfig> = {}) {
     transactions: async (cardId: string, type?: string) => txns.filter((t) => t.cardId === cardId && (!type || t.transactionType === type)),
   };
   let clock = Date.now();
+  const vaultRef: { v?: MemoryCardVault } = {};
+  const oneTimeCards: string[] = [];
   const app = new AppService({
     pool, ledger, wallets: new AgentWallets(ledger), addresses: new PgDepositAddresses(pool, "base-sepolia"),
     deriveAddress: (i: number) => `0x${i.toString(16).padStart(40, "0")}`, tiers: DEFAULT_TIERS, chain: "base-sepolia", sandbox: true, simulatedDeposits: true,
     miden: { request: async () => ({ isSuccessful: true, responseCode: "00", kycStatus: "Initiated" }) },
     lifecycle,
-    cards: { issue: async (_a: string, policy: unknown) => ({ id: `card-${randomBytes(3).toString("hex")}`, agentId: "x", policy, detailsCaptured: true }) },
+    cards: {
+      issue: async (_a: string, policy: unknown) => ({ id: `card-${randomBytes(3).toString("hex")}`, agentId: "x", policy, detailsCaptured: true }),
+      // Like the real service: a one-time card's details are sealed into the vault when it is issued.
+      issueOneTime: async (_k: unknown, _amount: number, _ref: string, o: { capture: boolean }) => {
+        const cardId = `lite-${randomBytes(3).toString("hex")}`;
+        if (o.capture) await vaultRef.v!.put(cardId, { ...card(), pan: ONE_TIME_PAN });
+        oneTimeCards.push(cardId);
+        return { cardId, lastFour: ONE_TIME_PAN.slice(-4), detailsCaptured: o.capture };
+      },
+    },
     funding: { fund: async () => ({ id: "m1", status: "confirmed" as const }) },
     now: () => new Date(clock),
   } as unknown as AppDeps);
   const { userId } = await app.signup(`u${randomBytes(3).toString("hex")}@example.com`);
+  if (opts.privacy) await pool.query("UPDATE app_user SET privacy_mode = true WHERE id = $1", [userId]);
   await app.submitKyc(userId, KYC);
   await app.simulateDeposit(userId, 5_000);
   await app.fundPending();
@@ -168,8 +184,10 @@ async function setup(cfg: Partial<SwapConfig> = {}) {
   await app.fundAgent(userId, a.agentId, 2_000);
   const p = (await app.agentByToken(a.token))!;
   const vault = new MemoryCardVault();
+  vaultRef.v = vault;
   await vault.put(p.cardId, card());
   const filler = new FakeFiller();
+  if (opts.privacy) filler.expectPan = ONE_TIME_PAN;
   const swap = new SwapService({
     pool, app, vault, filler, lifecycle, now: () => new Date(clock),
     config: { enabled: true, maxAmountCents: 1_000, allowedHosts: ["checkout.stripe.com"], ...cfg },
@@ -179,7 +197,7 @@ async function setup(cfg: Partial<SwapConfig> = {}) {
     clock += ms;
     await pool.query("UPDATE app_checkout_swap SET created_at = created_at - make_interval(secs => $1), updated_at = updated_at - make_interval(secs => $1)", [ms / 1000]);
   };
-  return { app, swap, filler, vault, pool, p, balance, txns, age };
+  return { app, swap, filler, vault, pool, p, balance, txns, age, oneTimeCards };
 }
 
 const URL1 = "https://checkout.stripe.com/c/pay/cs_test_a1";
@@ -345,4 +363,57 @@ test("swap: a second payment of the same amount on the card waits while the firs
   assert.equal(bv.status, "needs_review");
   assert.match(bv.payment!.reason!, /another open payment/);
   assert.equal((await s.pool.query("SELECT count(*)::int AS n FROM app_checkout_swap WHERE card_txn_ref = 'tx-4'")).rows[0].n, 0, "unclaimed");
+});
+
+test("swap, privacy mode: the page gets a one-time card, the user's own card is never revealed, and the details are discarded", { skip }, async () => {
+  const s = await setup({}, { privacy: true });
+  const r = await s.swap.pay(s.p, req());
+  assert.equal(r.status, "paid");
+  assert.equal(s.filler.calls.length, 1);
+  assert.equal(s.oneTimeCards.length, 1);
+  const lite = s.oneTimeCards[0]!;
+  // Only the one-time card was revealed, once, and it is gone from the vault afterwards.
+  assert.deepEqual(s.vault.audit.filter((x) => x.action === "reveal").map((x) => x.cardId), [lite]);
+  assert.equal(await s.vault.has(lite), false);
+  assert.ok(s.vault.audit.some((x) => x.action === "discard" && x.cardId === lite));
+  assert.equal(await s.vault.has(s.p.cardId), true, "the user's own card is untouched");
+  const row = (await s.pool.query("SELECT charge_card_id FROM app_checkout_swap")).rows[0];
+  assert.equal(row.charge_card_id, lite);
+  assert.equal(await s.balance(), 1_000);
+  assert.doesNotMatch(JSON.stringify(r), /5555|4444|lite-/);
+  // A retry under the same key is the same payment: no second card.
+  await s.swap.pay(s.p, req());
+  assert.equal(s.oneTimeCards.length, 1);
+});
+
+test("swap, privacy mode: same-amount payments run side by side, and reconcile reads each one-time card", { skip }, async () => {
+  const s = await setup({}, { privacy: true });
+  const now = () => new Date().toISOString().replace("Z", "");
+  s.filler.next = { outcome: "error", submitted: true, detail: "timeout" };
+  // A normal user would get a 409 "another $10 payment is still being confirmed" for the second one.
+  const a = await s.swap.pay(s.p, req({ idempotencyKey: "a" }));
+  const b = await s.swap.pay(s.p, req({ idempotencyKey: "b" }));
+  assert.equal(a.status, "processing");
+  assert.equal(b.status, "processing");
+  assert.equal(s.oneTimeCards.length, 2);
+  await s.age(90_000);
+  // Each card shows its own authorization; the one on the user's own card is not either payment's.
+  s.txns.push({ cardId: s.oneTimeCards[0], transactionType: "Authorization", transactionStatus: "Approved", transactionAmount: 10, transactionReference: "tx-a", transactionTime: now() });
+  s.txns.push({ cardId: s.oneTimeCards[1], transactionType: "Authorization", transactionStatus: "Declined", transactionAmount: 10, transactionReference: "tx-b", transactionTime: now() });
+  s.txns.push({ cardId: s.p.cardId, transactionType: "Authorization", transactionStatus: "Approved", transactionAmount: 10, transactionReference: "tx-other", transactionTime: now() });
+  await s.swap.reconcile();
+  assert.equal((await s.swap.get(s.p, a.swapId)).status, "paid");
+  assert.equal((await s.swap.get(s.p, b.swapId)).status, "failed");
+  assert.equal(await s.balance(), 1_000, "one payment stands, one was refunded");
+});
+
+test("swap, privacy mode: no one-time card means nothing is typed and nothing is charged", { skip }, async () => {
+  const s = await setup({}, { privacy: true });
+  // Swap in a card service that cannot make cards.
+  (s.app as any).d.cards = { ...(s.app as any).d.cards, issueOneTime: async () => { throw new MidenApiError("POST", "/api/v2/cards/issue-lite", 400, JSON.stringify({ responseCode: "111", responseMessage: "Maximum Number of Cards Per customer Limit 3 Exceeded" })); } };
+  const r = await s.swap.pay(s.p, req());
+  assert.equal(r.status, "failed");
+  assert.match(r.payment!.reason!, /Limit 3 Exceeded/);
+  assert.equal(s.filler.calls.length, 0);
+  assert.equal(await s.balance(), 2_000);
 });
