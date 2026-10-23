@@ -1,384 +1,58 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="2130" viewBox="0 0 2400 2130">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" font-family="Helvetica, Arial, sans-serif">
 <defs>
-<marker id="adc2626" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="#dc2626"/></marker>
-<marker id="sdc2626" markerWidth="10" markerHeight="10" refX="2" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="#dc2626"/></marker>
-<marker id="aca8a04" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="#ca8a04"/></marker>
-<marker id="sca8a04" markerWidth="10" markerHeight="10" refX="2" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="#ca8a04"/></marker>
-<marker id="a16a34a" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="#16a34a"/></marker>
-<marker id="s16a34a" markerWidth="10" markerHeight="10" refX="2" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="#16a34a"/></marker>
-<marker id="a374151" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="#374151"/></marker>
-<marker id="s374151" markerWidth="10" markerHeight="10" refX="2" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="#374151"/></marker>
-<marker id="aea580c" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="#ea580c"/></marker>
-<marker id="sea580c" markerWidth="10" markerHeight="10" refX="2" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="#ea580c"/></marker>
-<marker id="a2563eb" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker>
-<marker id="s2563eb" markerWidth="10" markerHeight="10" refX="2" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker>
-<marker id="a0891b2" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="#0891b2"/></marker>
-<marker id="s0891b2" markerWidth="10" markerHeight="10" refX="2" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="#0891b2"/></marker>
-<marker id="a7c3aed" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker>
-<marker id="s7c3aed" markerWidth="10" markerHeight="10" refX="2" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker>
+<marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="#374151"/></marker>
 </defs>
-<rect width="2400" height="2130" fill="#fafaf9"/>
-<text x="40" y="40" font-family="Helvetica, Arial, sans-serif" font-size="28" font-weight="bold" fill="#1f2937" text-anchor="start">agent-cards: architecture and end-to-end flows</text>
-<text x="40" y="64" font-family="Helvetica, Arial, sans-serif" font-size="14.5" font-weight="normal" fill="#4b5563" text-anchor="start">Virtual cards for AI agents, funded with stablecoins, on the Miden Workspace API. Sandbox only. Drawn from the code in the working tree (branch feat/developer-layer), 2026-10-23.</text>
-<rect x="60" y="84" width="365" height="88" rx="9" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
-<text x="72" y="108" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#1f2937" text-anchor="start">Owner / end-user browser</text>
-<text x="72" y="130" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="normal" fill="#4b5563" text-anchor="start">Dashboard /app, or the hosted /connect page</text>
-<text x="72" y="148" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="normal" fill="#4b5563" text-anchor="start">opened from a developer's app</text>
-<rect x="455" y="84" width="365" height="88" rx="9" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
-<text x="467" y="108" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#1f2937" text-anchor="start">Developer backend</text>
-<text x="467" y="130" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="normal" fill="#4b5563" text-anchor="start">Builds a product on the developer layer. Also the</text>
-<text x="467" y="148" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="normal" fill="#4b5563" text-anchor="start">receiver of signed webhooks</text>
-<rect x="850" y="84" width="365" height="88" rx="9" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
-<text x="862" y="108" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#1f2937" text-anchor="start">AI agent (Claude Code, Desktop, any MCP client)</text>
-<text x="862" y="130" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="normal" fill="#4b5563" text-anchor="start">MCP over HTTP or stdio bridge, or plain REST</text>
-<rect x="1245" y="84" width="365" height="88" rx="9" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
-<text x="1257" y="108" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#1f2937" text-anchor="start">Merchant backend (@agent-cards/checkout SDK)</text>
-<text x="1257" y="130" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="normal" fill="#4b5563" text-anchor="start">Takes payments from agents with fixed-price</text>
-<text x="1257" y="148" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="normal" fill="#4b5563" text-anchor="start">checkouts</text>
-<rect x="40" y="240" width="1610" height="780" rx="14" fill="#ffffff" stroke="#111827" stroke-width="3"/>
-<path d="M242,172 L242,298" fill="none" stroke="#374151" stroke-width="2.5" marker-end="url(#a374151)"/>
-<rect x="250" y="199" width="115" height="19" fill="#ffffff" opacity="1"/>
-<text x="255" y="212" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" text-anchor="start">uk_ / us_ token</text>
-<path d="M637,172 L637,298" fill="none" stroke="#374151" stroke-width="2.5" marker-end="url(#a374151)"/>
-<rect x="645" y="199" width="129" height="19" fill="#ffffff" opacity="1"/>
-<text x="650" y="212" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" text-anchor="start">dk_ developer key</text>
-<path d="M1032,172 L1032,298" fill="none" stroke="#16a34a" stroke-width="2.5" marker-end="url(#a16a34a)"/>
-<rect x="1040" y="199" width="115" height="19" fill="#ffffff" opacity="1"/>
-<text x="1045" y="212" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#16a34a" text-anchor="start">ak_ agent token</text>
-<path d="M1427,172 L1427,298" fill="none" stroke="#ca8a04" stroke-width="2.5" marker-end="url(#aca8a04)"/>
-<rect x="1435" y="199" width="122" height="19" fill="#ffffff" opacity="1"/>
-<text x="1440" y="212" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#ca8a04" text-anchor="start">mk_ merchant key</text>
-<text x="58" y="264" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#1f2937" text-anchor="start">agent-cards service</text>
-<text x="262" y="264" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" text-anchor="start">one Node process, 127.0.0.1:8787</text>
-<text x="650" y="264" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">HTTP edge: Host guard, 2 MB cap, JSON-only POST, CSP</text>
-<text x="1045" y="264" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">Boots only against the Miden sandbox</text>
-<rect x="60" y="304" width="365" height="118" rx="9" fill="#e0e7ff" stroke="#4f46e5" stroke-width="2"/>
-<text x="72" y="328" font-family="Helvetica, Arial, sans-serif" font-size="15.5" font-weight="bold" fill="#1f2937" text-anchor="start">/  /docs  /app  /connect</text>
-<text x="72" y="350" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">static pages</text>
-<text x="72" y="367.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">/api/me/*  (owner API: KYC, agents, fund, limits)</text>
-<text x="72" y="385.0" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">tokens: uk_ (owner) or us_ (24h session)</text>
-<rect x="455" y="304" width="365" height="118" rx="9" fill="#e0e7ff" stroke="#4f46e5" stroke-width="2"/>
-<text x="467" y="328" font-family="Helvetica, Arial, sans-serif" font-size="15.5" font-weight="bold" fill="#1f2937" text-anchor="start">/developer/v1/*</text>
-<text x="467" y="350" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">signup, users, sessions, agents, limits, settings,</text>
-<text x="467" y="367.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">events</text>
-<text x="467" y="385.0" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">token: dk_ (sees only its own users)</text>
-<rect x="850" y="304" width="365" height="118" rx="9" fill="#e0e7ff" stroke="#4f46e5" stroke-width="2"/>
-<text x="862" y="328" font-family="Helvetica, Arial, sans-serif" font-size="15.5" font-weight="bold" fill="#1f2937" text-anchor="start">/agent/v1/*   /mcp</text>
-<text x="862" y="350" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">wallet, pay, transactions, checkouts, hosted-</text>
-<text x="862" y="367.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">checkouts</text>
-<text x="862" y="385.0" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">MCP tools: get_wallet, pay, list_transactions,</text>
-<text x="862" y="402.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">get_checkout, pay_checkout, pay_hosted_checkout, …</text>
-<rect x="1245" y="304" width="365" height="118" rx="9" fill="#e0e7ff" stroke="#4f46e5" stroke-width="2"/>
-<text x="1257" y="328" font-family="Helvetica, Arial, sans-serif" font-size="15.5" font-weight="bold" fill="#1f2937" text-anchor="start">/merchant/v1/*   /pay/cs_…   /v1/checkouts</text>
-<text x="1257" y="350" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">signup, checkouts, balance, payout address, payouts</text>
-<text x="1257" y="367.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">token: mk_ (public pay page needs none)</text>
-<text x="58" y="446" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#4b5563" text-anchor="start">Domain services</text>
-<rect x="60" y="452" width="370" height="268" rx="9" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
-<text x="72" y="476" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="bold" fill="#1f2937" text-anchor="start">AppService</text>
-<text x="72" y="498" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">src/app/service.ts. The hub: every payment ends</text>
-<text x="72" y="516.5" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">in AppService.pay.</text>
-<text x="72" y="535.0" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">• signup, submitKyc, refresh (KYC → card)</text>
-<text x="72" y="553.5" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">• createAgent / fund / reclaim / revoke / limits</text>
-<text x="72" y="572.0" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">(clamped to the card tier)</text>
-<text x="72" y="590.5" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">• pay → doPay: idempotency, policy, ledger</text>
-<text x="72" y="609.0" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">debit, charge, settle</text>
-<text x="72" y="627.5" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">• fundPending: holding → Miden top-up</text>
-<text x="72" y="646.0" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">• reconcileSpends: settle lost answers from the</text>
-<text x="72" y="664.5" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">card's Authorization list</text>
-<text x="72" y="683.0" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">• chargeCardFor: privacy mode one-time cards</text>
-<text x="72" y="701.5" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">• restore() on boot</text>
-<rect x="470" y="452" width="340" height="268" rx="9" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
-<text x="482" y="476" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="bold" fill="#1f2937" text-anchor="start">DeveloperService</text>
-<text x="482" y="498" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">src/developers/service.ts</text>
-<text x="482" y="516.5" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">• dk_ keys, signup, rotate</text>
-<text x="482" y="535.0" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">• users by externalId (idempotent)</text>
-<text x="482" y="553.5" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">• us_ sessions in a URL fragment (60 s to 24</text>
-<text x="482" y="572.0" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">h)</text>
-<text x="482" y="590.5" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">• per-user privacy mode (fixed at creation)</text>
-<text x="482" y="609.0" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">• webhook outbox → HMAC-SHA256 signed POST,</text>
-<text x="482" y="627.5" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">8 tries, backoff 30 s to 6 h</text>
-<text x="482" y="646.0" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">• refuses private-address webhook URLs</text>
-<text x="482" y="664.5" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">outside sandbox</text>
-<rect x="830" y="452" width="340" height="268" rx="9" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
-<text x="842" y="476" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="bold" fill="#1f2937" text-anchor="start">CheckoutService</text>
-<text x="842" y="498" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">src/app/checkout.ts</text>
-<text x="842" y="516.5" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">• merchants (mk_), fixed-price checkouts cs_</text>
-<text x="842" y="535.0" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">• atomic claim, spend key</text>
-<text x="842" y="553.5" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">checkout:&lt;id&gt;:&lt;attempt&gt;: paid at most once</text>
-<text x="842" y="572.0" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">• on paid: credit merchant:&lt;id&gt; in the</text>
-<text x="842" y="590.5" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">ledger</text>
-<text x="842" y="609.0" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">• payout requests, reserved before send, 10</text>
-<text x="842" y="627.5" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">min address delay (sandbox)</text>
-<text x="842" y="646.0" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">• needs_review holds for a person</text>
-<rect x="1190" y="452" width="420" height="268" rx="9" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
-<text x="1202" y="476" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="bold" fill="#1f2937" text-anchor="start">SwapService (checkout swap)</text>
-<text x="1202" y="498" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">src/checkout-swap/swap.ts (off unless SWAP_ENABLED=1)</text>
-<text x="1202" y="516.5" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">• agent sends url + exact price; host allowlist, $10</text>
-<text x="1202" y="535.0" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">cap</text>
-<text x="1202" y="553.5" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">• AppService.pay first, then vault.reveal (audited)</text>
-<text x="1202" y="572.0" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">• RoutingFiller drives headless Chromium (playwright-</text>
-<text x="1202" y="590.5" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">core): Stripe, Shopify, Lemon Squeezy, Paddle</text>
-<text x="1202" y="609.0" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">• reads the total, must equal price; scrubs card values</text>
-<text x="1202" y="627.5" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">afterwards</text>
-<text x="1202" y="646.0" font-family="Helvetica, Arial, sans-serif" font-size="13.5" font-weight="normal" fill="#4b5563" text-anchor="start">• reconcile: match card Authorization by amount + time</text>
-<path d="M1000,720 L1000,740 L250,740 L250,722" fill="none" stroke="#374151" stroke-width="2" marker-end="url(#a374151)"/>
-<rect x="470" y="725" width="302" height="18" fill="#ffffff" opacity="1"/>
-<text x="475" y="737" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="bold" fill="#1f2937" text-anchor="start">checkout + swap payments reuse AppService.pay</text>
-<path d="M1330,720 L1330,740 L1000,740" fill="none" stroke="#374151" stroke-width="2" marker-end="url(#a374151)"/>
-<text x="58" y="757" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#4b5563" text-anchor="start">Core libraries</text>
-<rect x="60" y="764" width="300" height="146" rx="9" fill="#fef9c3" stroke="#ca8a04" stroke-width="2"/>
-<text x="72" y="788" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="bold" fill="#1f2937" text-anchor="start">AgentWallets + SpendPolicy</text>
-<text x="72" y="810" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">per-transaction, daily and MCC allowlist,</text>
-<text x="72" y="827.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">checked with evaluate(); agents are</text>
-<text x="72" y="845.0" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">ledger sub-balances. Daily totals checked</text>
-<text x="72" y="862.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">in Postgres under a row lock</text>
-<rect x="375" y="764" width="360" height="146" rx="9" fill="#fef9c3" stroke="#ca8a04" stroke-width="2"/>
-<text x="387" y="788" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="bold" fill="#1f2937" text-anchor="start">Ledger (double entry)</text>
-<text x="387" y="810" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">idempotent keys, append-only. Accounts: holding:,</text>
-<text x="387" y="827.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">pending:, card:, agent:, merchant:,</text>
-<text x="387" y="845.0" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">payout_pending. Merchant balances cannot go</text>
-<text x="387" y="862.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">negative</text>
-<rect x="750" y="764" width="400" height="146" rx="9" fill="#fef9c3" stroke="#ca8a04" stroke-width="2"/>
-<text x="762" y="788" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="bold" fill="#1f2937" text-anchor="start">CardService + CardLifecycle</text>
-<text x="762" y="810" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">issue (v2), issueOneTime (Lite), kycStatus, balance,</text>
-<text x="762" y="827.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">transactions, mock authorization, top-up. One real card</text>
-<text x="762" y="845.0" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">per user; tiers quick / full cap limits</text>
-<rect x="1165" y="764" width="445" height="146" rx="9" fill="#fef9c3" stroke="#ca8a04" stroke-width="2"/>
-<text x="1177" y="788" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="bold" fill="#1f2937" text-anchor="start">CardVault (Postgres, AES-256-GCM)</text>
-<text x="1177" y="810" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">PAN / CVV sealed at issue time (CARD_VAULT_KEY). Only swap can</text>
-<text x="1177" y="827.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">reveal; every reveal writes an audit row first. Never returned</text>
-<text x="1177" y="845.0" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">to agents or merchants. Deleted after a one-time card is used</text>
-<path d="M1330,722 L1380,764" fill="none" stroke="#dc2626" stroke-width="2.5" marker-end="url(#adc2626)"/>
-<text x="58" y="934" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#4b5563" text-anchor="start">Background workers (same process)</text>
-<rect x="60" y="940" width="520" height="72" rx="9" fill="#ffedd5" stroke="#ea580c" stroke-width="2"/>
-<text x="72" y="964" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#1f2937" text-anchor="start">Background loop, every 5 s</text>
-<text x="72" y="986" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4b5563" text-anchor="start">KYC poll → card issue · fundPending · reconcileSpends · webhook deliverDue ·</text>
-<text x="72" y="1003" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4b5563" text-anchor="start">swap reconcile · checkout sync · payout tick</text>
-<rect x="595" y="940" width="300" height="72" rx="9" fill="#ffedd5" stroke="#ea580c" stroke-width="2"/>
-<text x="607" y="964" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#1f2937" text-anchor="start">BaseUsdcWatcher ×2</text>
-<text x="607" y="986" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4b5563" text-anchor="start">Base Sepolia + Ethereum Sepolia,</text>
-<text x="607" y="1003" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4b5563" text-anchor="start">eth_getLogs, 5 confirmations</text>
-<rect x="910" y="940" width="260" height="72" rx="9" fill="#ffedd5" stroke="#ea580c" stroke-width="2"/>
-<text x="922" y="964" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#1f2937" text-anchor="start">PayoutSender</text>
-<text x="922" y="986" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4b5563" text-anchor="start">signs + broadcasts USDC payouts,</text>
-<text x="922" y="1003" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4b5563" text-anchor="start">advisory-locked</text>
-<rect x="1185" y="940" width="425" height="72" rx="9" fill="#ffedd5" stroke="#ea580c" stroke-width="2"/>
-<text x="1197" y="964" font-family="Helvetica, Arial, sans-serif" font-size="14.5" font-weight="bold" fill="#1f2937" text-anchor="start">MidenClient + HdDepositWallet</text>
-<text x="1197" y="986" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4b5563" text-anchor="start">OAuth client-credentials, SHA-1 signed requests, Reference =</text>
-<text x="1197" y="1003" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4b5563" text-anchor="start">idempotency · HD wallet derives per-card addresses</text>
-<rect x="40" y="1060" width="1610" height="118" rx="9" fill="#fde68a" stroke="#b45309" stroke-width="2"/>
-<text x="52" y="1084" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="bold" fill="#1f2937" text-anchor="start">PostgreSQL (DATABASE_URL, migrations 001 to 011 run at boot)</text>
-<text x="56" y="1108" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" text-anchor="start">ledger</text>
-<text x="56" y="1126" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4b5563" text-anchor="start">ledger_tx, ledger_posting,</text>
-<text x="56" y="1141" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4b5563" text-anchor="start">ledger_balance</text>
-<text x="322" y="1108" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" text-anchor="start">users and cards</text>
-<text x="322" y="1126" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4b5563" text-anchor="start">app_user, app_card, app_agent,</text>
-<text x="322" y="1141" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4b5563" text-anchor="start">app_funding, deposit_address,</text>
-<text x="322" y="1156" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4b5563" text-anchor="start">chain_cursor</text>
-<text x="588" y="1108" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" text-anchor="start">payments</text>
-<text x="588" y="1126" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4b5563" text-anchor="start">app_spend, app_one_time_card,</text>
-<text x="588" y="1141" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4b5563" text-anchor="start">app_checkout_swap</text>
-<text x="854" y="1108" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" text-anchor="start">merchants</text>
-<text x="854" y="1126" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4b5563" text-anchor="start">app_merchant, app_checkout, app_payout</text>
-<text x="1120" y="1108" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" text-anchor="start">vault</text>
-<text x="1120" y="1126" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4b5563" text-anchor="start">card_vault, card_vault_audit</text>
-<text x="1386" y="1108" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="bold" fill="#1f2937" text-anchor="start">developers</text>
-<text x="1386" y="1126" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4b5563" text-anchor="start">app_developer, app_session,</text>
-<text x="1386" y="1141" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#4b5563" text-anchor="start">app_webhook_event</text>
-<path d="M250,1012 L250,1058" fill="none" stroke="#374151" stroke-width="2.5" marker-end="url(#a374151)" marker-start="url(#s374151)"/>
-<text x="262" y="1042" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="normal" fill="#1f2937" text-anchor="start">pg Pool: state, row locks, advisory locks</text>
-<text x="1765" y="232" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#1f2937" text-anchor="start">External systems</text>
-<rect x="1765" y="244" width="600" height="84" rx="9" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
-<text x="1777" y="268" font-family="Helvetica, Arial, sans-serif" font-size="15.5" font-weight="bold" fill="#1f2937" text-anchor="start">Developer's webhook endpoint</text>
-<text x="1777" y="290" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">receives kyc.updated, card.issued, funding.completed, spend.settled. Headers</text>
-<text x="1777" y="307.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">x-agentcards-event-id and x-agentcards-signature (t=,v1=)</text>
-<rect x="1765" y="358" width="600" height="232" rx="9" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/>
-<text x="1777" y="382" font-family="Helvetica, Arial, sans-serif" font-size="16" font-weight="bold" fill="#1f2937" text-anchor="start">Third-party hosted checkouts</text>
-<text x="1777" y="404" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">Stripe Checkout / Payment Links, Shopify /checkouts, Lemon Squeezy, Paddle. Opened by</text>
-<text x="1777" y="421.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">our headless Chromium on the server; the owner's card is typed in there. The agent</text>
-<text x="1777" y="439.0" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">never sees it.</text>
-<text x="1777" y="456.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start"></text>
-<text x="1777" y="474.0" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">Tested against local fixtures for all four; a real Stripe test-mode Checkout passed</text>
-<text x="1777" y="491.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">($1.00, 2026-10-19). Shopify, Lemon Squeezy and Paddle selectors are not yet proven on</text>
-<text x="1777" y="509.0" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">live pages.</text>
-<rect x="1765" y="618" width="600" height="392" rx="9" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/>
-<text x="1777" y="642" font-family="Helvetica, Arial, sans-serif" font-size="16" font-weight="bold" fill="#1f2937" text-anchor="start">Miden Workspace API (sandbox)</text>
-<text x="1777" y="664" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">sandbox-api.midencards.io/miden + sandbox-identityserver.midencards.io (token). Card</text>
-<text x="1777" y="681.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">issuing, KYC and wallet-as-a-service. Not the Miden blockchain.</text>
-<text x="1777" y="699.0" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start"></text>
-<text x="1777" y="716.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">• POST /connect/token (client credentials)</text>
-<text x="1777" y="734.0" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">• POST /api/v1/cards/kyc-submit; GET …/kyc/client-reference/{ref}</text>
-<text x="1777" y="751.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">• POST /api/v2/cards/issue; POST /api/v2/cards/issue-lite (one-time)</text>
-<text x="1777" y="769.0" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">• PATCH /api/v1/cards/topup from our Miden USD wallet</text>
-<text x="1777" y="786.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">• GET balance, transactions (Authorization list), full-pan</text>
-<text x="1777" y="804.0" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">• POST /api/v1/mock/authorization: the sandbox purchase simulator</text>
-<text x="1777" y="821.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start"></text>
-<text x="1777" y="839.0" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">Account IP allowlist applies. Webhooks (HMAC x-signature) are implemented in</text>
-<text x="1777" y="856.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">src/webhooks/signature.ts but not live: subscribe is rejected (code 119), so KYC and</text>
-<text x="1777" y="874.0" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">balances are polled.</text>
-<rect x="1765" y="1030" width="600" height="148" rx="9" fill="#cffafe" stroke="#0891b2" stroke-width="2"/>
-<text x="1777" y="1054" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#1f2937" text-anchor="start">Public RPC: Base Sepolia + Ethereum Sepolia (publicnode)</text>
-<text x="1777" y="1076" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">Circle test USDC. Users fund by sending USDC to their per-card address</text>
-<text x="1777" y="1093.5" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">(faucet.circle.com or any wallet). We poll Transfer logs in; payouts to merchants are</text>
-<text x="1777" y="1111.0" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">broadcast here from our payout account. Testnet only; free RPC, no SLA.</text>
-<path d="M1610,480 L1765,480" fill="none" stroke="#dc2626" stroke-width="2.5" marker-end="url(#adc2626)"/>
-<rect x="1618" y="488" width="133" height="18" fill="#ffffff" opacity="1"/>
-<text x="1623" y="500" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="bold" fill="#dc2626" text-anchor="start">Chromium → pay page</text>
-<circle cx="1690" cy="462" r="13" fill="#dc2626"/>
-<text x="1690" y="467" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#ffffff" text-anchor="middle">5</text>
-<path d="M1610,976 L1765,976" fill="none" stroke="#374151" stroke-width="2.5" marker-end="url(#a374151)" marker-start="url(#s374151)"/>
-<rect x="1618" y="954" width="153" height="18" fill="#ffffff" opacity="1"/>
-<text x="1623" y="966" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="bold" fill="#1f2937" text-anchor="start">HTTPS, signed + Bearer</text>
-<path d="M745,1012 L745,1043 L1765,1043" fill="none" stroke="#0891b2" stroke-width="2.5" marker-end="url(#a0891b2)" marker-start="url(#s0891b2)"/>
-<path d="M1040,1012 L1040,1043" fill="none" stroke="#ea580c" stroke-width="2.5" marker-end="url(#aea580c)"/>
-<text x="1060" y="1036" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="bold" fill="#0e7490" text-anchor="start">eth_getLogs polling (in)  ·  signed USDC transfers (out)</text>
-<circle cx="700" cy="1038" r="13" fill="#0891b2"/>
-<text x="700" y="1043" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#ffffff" text-anchor="middle">2</text>
-<path d="M470,600 L442,600 L442,128 L455,128" fill="none" stroke="#ea580c" stroke-width="2.5" stroke-dasharray="8 6" marker-end="url(#aea580c)"/>
-<circle cx="442" cy="200" r="13" fill="#ea580c"/>
-<text x="442" y="205" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#ffffff" text-anchor="middle">7</text>
-<circle cx="1745" cy="286" r="13" fill="#ea580c"/>
-<text x="1745" y="291" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#ffffff" text-anchor="middle">7</text>
-<path d="M790,452 L790,437 L1745,437 L1745,330" fill="none" stroke="#ea580c" stroke-width="2.5" stroke-dasharray="8 6" marker-end="url(#aea580c)"/>
-<rect x="1560" y="420" width="107" height="18" fill="#ffffff" opacity="1"/>
-<text x="1565" y="432" font-family="Helvetica, Arial, sans-serif" font-size="12" font-weight="bold" fill="#ea580c" text-anchor="start">signed webhooks</text>
-<circle cx="40" cy="304" r="13" fill="#2563eb"/>
-<text x="40" y="309" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#ffffff" text-anchor="middle">1</text>
-<circle cx="835" cy="304" r="13" fill="#16a34a"/>
-<text x="835" y="309" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#ffffff" text-anchor="middle">3</text>
-<circle cx="1230" cy="304" r="13" fill="#ca8a04"/>
-<text x="1230" y="309" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#ffffff" text-anchor="middle">4</text>
-<rect x="1620" y="1846" width="740" height="276" rx="9" fill="#ffffff" stroke="#9ca3af" stroke-width="2.5"/>
-<text x="1636" y="1878" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="bold" fill="#1f2937" text-anchor="start">Legend</text>
-<rect x="1636" y="1894" width="22" height="14" rx="3" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
-<text x="1668" y="1906" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="normal" fill="#1f2937" text-anchor="start">People and their servers</text>
-<rect x="1636" y="1914" width="22" height="14" rx="3" fill="#e0e7ff" stroke="#4f46e5" stroke-width="2"/>
-<text x="1668" y="1926" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="normal" fill="#1f2937" text-anchor="start">HTTP edge</text>
-<rect x="1636" y="1934" width="22" height="14" rx="3" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
-<text x="1668" y="1946" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="normal" fill="#1f2937" text-anchor="start">Domain services</text>
-<rect x="1636" y="1954" width="22" height="14" rx="3" fill="#fef9c3" stroke="#ca8a04" stroke-width="2"/>
-<text x="1668" y="1966" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="normal" fill="#1f2937" text-anchor="start">Core libraries</text>
-<rect x="1636" y="1974" width="22" height="14" rx="3" fill="#ffedd5" stroke="#ea580c" stroke-width="2"/>
-<text x="1668" y="1986" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="normal" fill="#1f2937" text-anchor="start">Background workers</text>
-<rect x="1636" y="1994" width="22" height="14" rx="3" fill="#fde68a" stroke="#b45309" stroke-width="2"/>
-<text x="1668" y="2006" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="normal" fill="#1f2937" text-anchor="start">PostgreSQL</text>
-<rect x="1636" y="2014" width="22" height="14" rx="3" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/>
-<text x="1668" y="2026" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="normal" fill="#1f2937" text-anchor="start">External: Miden, hosted checkouts</text>
-<rect x="1636" y="2034" width="22" height="14" rx="3" fill="#cffafe" stroke="#0891b2" stroke-width="2"/>
-<text x="1668" y="2046" font-family="Helvetica, Arial, sans-serif" font-size="13" font-weight="normal" fill="#1f2937" text-anchor="start">External: blockchain RPC</text>
-<text x="2020" y="1906" font-family="Helvetica, Arial, sans-serif" font-size="14" font-weight="bold" fill="#1f2937" text-anchor="start">Credentials</text>
-<text x="2020" y="1930" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">uk_ owner  ·  us_ session (24h max)</text>
-<text x="2020" y="1952" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">dk_ developer  ·  ak_ agent</text>
-<text x="2020" y="1974" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">mk_ merchant  ·  whsec_ webhook secret</text>
-<text x="2020" y="1996" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">Stored as SHA-256 only; shown once</text>
-<text x="2020" y="2018" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">MIDEN_* keys: env vars, never logged</text>
-<text x="1636" y="2080" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">Arrows: solid = request/call, dashed orange = signed webhook,</text>
-<text x="1636" y="2098" font-family="Helvetica, Arial, sans-serif" font-size="12.5" font-weight="normal" fill="#4b5563" text-anchor="start">numbered badges tie a path to its flow panel below.</text>
-<text x="40" y="1214" font-family="Helvetica, Arial, sans-serif" font-size="22" font-weight="bold" fill="#1f2937" text-anchor="start">End-to-end flows</text>
-<rect x="40" y="1262" width="740" height="276" rx="9" fill="#ffffff" stroke="#2563eb" stroke-width="2.5"/>
-<circle cx="64" cy="1288" r="13" fill="#2563eb"/>
-<text x="64" y="1293" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#ffffff" text-anchor="middle">1</text>
-<text x="86" y="1294" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="bold" fill="#1f2937" text-anchor="start">Onboarding, KYC and the hosted /connect page</text>
-<text x="56" y="1320" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• Direct: owner opens /app, POST /api/signup → uk_ token. Via a developer: backend calls POST</text>
-<text x="68" y="1336" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">/developer/v1/users (idempotent on externalId), then /sessions → a us_ URL on /connect (token in the</text>
-<text x="68" y="1352" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">fragment, never in logs).</text>
-<text x="56" y="1373" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• Browser submits Card KYC to /api/me/kyc; the service forwards it to Miden kyc-submit as an Individual.</text>
-<text x="68" y="1389" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">Identity data is never stored or logged; we keep only kyc_reference and status.</text>
-<text x="56" y="1410" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• Background loop polls Miden every 5 s until Approved, then POST /v2/cards/issue (reference</text>
-<text x="68" y="1426" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">card-&lt;userId&gt;, so a retry cannot create a second card) and allocates a deposit address from the HD</text>
-<text x="68" y="1442" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">wallet.</text>
-<text x="56" y="1463" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• Developer gets kyc.updated and card.issued webhooks. Tier quick ($50/tx, $100/day, $500 lifetime) caps</text>
-<text x="68" y="1479" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">everything below it (placeholder numbers).</text>
-<rect x="830" y="1262" width="740" height="276" rx="9" fill="#ffffff" stroke="#0891b2" stroke-width="2.5"/>
-<circle cx="854" cy="1288" r="13" fill="#0891b2"/>
-<text x="854" y="1293" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#ffffff" text-anchor="middle">2</text>
-<text x="876" y="1294" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="bold" fill="#1f2937" text-anchor="start">Funding: USDC on-chain to card balance</text>
-<text x="846" y="1320" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• User sends test USDC to the per-card address on Base Sepolia (Ethereum Sepolia is also watched, since</text>
-<text x="858" y="1336" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">the faucet defaults to it).</text>
-<text x="846" y="1357" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• BaseUsdcWatcher reads Transfer logs, waits 5 blocks, credits holding:&lt;card&gt; (key chain+tx+logIndex, so</text>
-<text x="858" y="1373" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">replays are no-ops). Sub-cent dust is never credited. Dev shortcut: simulate-deposit when</text>
-<text x="858" y="1389" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">ALLOW_SIMULATED_DEPOSITS=1.</text>
-<text x="846" y="1410" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• fundPending (5 s): at $1 or more, within the tier lifetime cap, holding → pending, then Miden PATCH</text>
-<text x="858" y="1426" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">/cards/topup with a stable Reference. 'Already seen' = success; 4xx releases; timeouts retry the same</text>
-<text x="858" y="1442" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">Reference.</text>
-<text x="846" y="1463" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• Open: the USDC received is not yet converted into the Miden USD wallet that pays the top-up. The</text>
-<text x="858" y="1479" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">sandbox wallet is pre-funded. funding.completed webhook fires.</text>
-<rect x="1620" y="1262" width="740" height="276" rx="9" fill="#ffffff" stroke="#16a34a" stroke-width="2.5"/>
-<circle cx="1644" cy="1288" r="13" fill="#16a34a"/>
-<text x="1644" y="1293" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#ffffff" text-anchor="middle">3</text>
-<text x="1666" y="1294" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="bold" fill="#1f2937" text-anchor="start">Agent pays (MCP or REST)</text>
-<text x="1636" y="1320" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• Owner or developer creates an agent (limits clamped to the card tier), funds it from the card (ledger</text>
-<text x="1648" y="1336" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">card: → agent:), and hands over an ak_ token.</text>
-<text x="1636" y="1357" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• Agent calls pay (MCP /mcp, stdio bridge, or POST /agent/v1/pay). AppService.pay: idempotency per</text>
-<text x="1648" y="1373" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">(card, agent, key) → spend row 'processing' → policy (per-tx, daily, MCC) → sub-balance debit.</text>
-<text x="1636" y="1394" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• Charge: today Miden's sandbox purchase simulator (mock/authorization). Approved = approved. Definite</text>
-<text x="1648" y="1410" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">decline = debit reversed, voided. Lost answer = held 'processing'; reconcile matches the card's</text>
-<text x="1648" y="1426" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">Authorization list by a per-spend merchant id.</text>
-<text x="1636" y="1447" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• Nothing from the card ever reaches the agent. spend.settled webhook fires on every final state.</text>
-<rect x="40" y="1554" width="740" height="276" rx="9" fill="#ffffff" stroke="#ca8a04" stroke-width="2.5"/>
-<circle cx="64" cy="1580" r="13" fill="#ca8a04"/>
-<text x="64" y="1585" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#ffffff" text-anchor="middle">4</text>
-<text x="86" y="1586" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="bold" fill="#1f2937" text-anchor="start">Merchant checkout and payout</text>
-<text x="56" y="1612" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• Merchant backend (SDK) signs up for mk_, creates a fixed-price checkout cs_ with a /pay/cs_ page and</text>
-<text x="68" y="1628" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">polls it until 'paid'.</text>
-<text x="56" y="1649" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• Agent calls pay_checkout. The checkout is claimed atomically and paid as an ordinary AppService.pay</text>
-<text x="68" y="1665" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">under spend key checkout:&lt;id&gt;:&lt;attempt&gt;, so it is charged at most once and declined attempts can be</text>
-<text x="68" y="1681" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">retried.</text>
-<text x="56" y="1702" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• We are merchant of record: on paid, ledger credits merchant:&lt;id&gt;. Payouts reserve first (merchant →</text>
-<text x="68" y="1718" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">payout_pending), a new payout address waits 10 min in the sandbox (24 h default).</text>
-<text x="56" y="1739" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• PayoutSender signs a USDC transfer at an explicit nonce, stores the bytes, then broadcasts on Base</text>
-<text x="68" y="1755" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">Sepolia; 5 confirmations = sent, revert = failed and money back. Open: merchant KYB, settlement hold,</text>
-<text x="68" y="1771" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">key custody.</text>
-<rect x="830" y="1554" width="740" height="276" rx="9" fill="#ffffff" stroke="#dc2626" stroke-width="2.5"/>
-<circle cx="854" cy="1580" r="13" fill="#dc2626"/>
-<text x="854" y="1585" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#ffffff" text-anchor="middle">5</text>
-<text x="876" y="1586" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="bold" fill="#1f2937" text-anchor="start">Hosted checkout swap (agent pays any supported page)</text>
-<text x="846" y="1612" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• Agent calls pay_hosted_checkout(url, exact amount, merchant, key). Validates: swap enabled, https host</text>
-<text x="858" y="1628" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">on SWAP_ALLOWED_HOSTS, amount ≤ cap ($10), card present in the vault.</text>
-<text x="846" y="1649" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• AppService.pay runs first (limits, balance, debit) under checkout:swap:&lt;id&gt;. Only then does</text>
-<text x="858" y="1665" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">vault.reveal (audited) hand the card to the filler, as late as possible.</text>
-<text x="846" y="1686" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• Chromium loads the page, refuses on a bot check, reads the total (must equal the agreed price; re-</text>
-<text x="858" y="1702" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">checked after tax/shipping steps), types the card, presses pay, watches the outcome, scrubs the details.</text>
-<text x="846" y="1723" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• Declined or never submitted = voided. Submitted without a clear answer (3DS, captcha, timeout) = held;</text>
-<text x="858" y="1739" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">reconcile matches the card's Miden Authorization by amount + time and records the real MCC. Ambiguity =</text>
-<text x="858" y="1755" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">needs_review.</text>
-<rect x="1620" y="1554" width="740" height="276" rx="9" fill="#ffffff" stroke="#7c3aed" stroke-width="2.5"/>
-<circle cx="1644" cy="1580" r="13" fill="#7c3aed"/>
-<text x="1644" y="1585" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#ffffff" text-anchor="middle">6</text>
-<text x="1666" y="1586" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="bold" fill="#1f2937" text-anchor="start">Privacy mode: one-time cards</text>
-<text x="1636" y="1612" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• Developer sets privacyMode (default via /settings, or per user at creation). It is fixed per user.</text>
-<text x="1636" y="1633" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• Each payment first passes the agent's limits and debit, then chargeCardFor issues a fresh Miden Lite</text>
-<text x="1648" y="1649" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">card (issue-lite) loaded with exactly the payment (minimum $1), written to app_one_time_card before the</text>
-<text x="1648" y="1665" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">call. Max 50 per user per day.</text>
-<text x="1636" y="1686" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• The Lite card pays the merchant or the hosted checkout; its details are deleted from the vault once</text>
-<text x="1648" y="1702" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">the page is filled, and it ends by itself 2 days after issue.</text>
-<text x="1636" y="1723" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• Known blockers: Miden caps a customer at 3 cards including Lite cards; the single-swipe rule was not</text>
-<text x="1648" y="1739" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">enforced by the simulator; a lost issue answer is flagged needs_review and nothing is charged.</text>
-<rect x="40" y="1846" width="740" height="276" rx="9" fill="#ffffff" stroke="#ea580c" stroke-width="2.5"/>
-<circle cx="64" cy="1872" r="13" fill="#ea580c"/>
-<text x="64" y="1877" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#ffffff" text-anchor="middle">7</text>
-<text x="86" y="1878" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="bold" fill="#1f2937" text-anchor="start">Webhooks (outbound)</text>
-<text x="56" y="1904" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• AppService emits events through onEvent into DeveloperService, which writes app_webhook_event (outbox)</text>
-<text x="68" y="1920" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">for the owning developer. Types: kyc.updated, card.issued, funding.completed, spend.settled.</text>
-<text x="56" y="1941" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• deliverDue (in the 5 s loop, single flight) POSTs the JSON with x-agentcards-event-id and</text>
-<text x="68" y="1957" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">x-agentcards-signature: t=&lt;unix&gt;,v1=HMAC-SHA256(whsec_, t.rawBody). 2xx = delivered; otherwise retry 30</text>
-<text x="68" y="1973" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">s, 1 m, 2 m … up to 6 h, 8 tries. Redirects not followed.</text>
-<text x="56" y="1994" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• At-least-once: receivers dedupe on event id and reject t older than 5 minutes; GET</text>
-<text x="68" y="2010" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">/developer/v1/events shows status and attempts. An event can be lost if the process dies before the</text>
-<text x="68" y="2026" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">outbox insert, so reconcile with GET /developer/v1/users/:id.</text>
-<text x="56" y="2047" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• Inbound from Miden: not used. Signature scheme implemented, subscription blocked; KYC and balances are</text>
-<text x="68" y="2063" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">polled instead.</text>
-<rect x="830" y="1846" width="740" height="276" rx="9" fill="#ffffff" stroke="#6b7280" stroke-width="2.5"/>
-<circle cx="854" cy="1872" r="13" fill="#6b7280"/>
-<text x="854" y="1877" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="bold" fill="#ffffff" text-anchor="middle">!</text>
-<text x="876" y="1878" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="bold" fill="#1f2937" text-anchor="start">Trust boundaries and security posture</text>
-<text x="846" y="1904" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• The agent holds only an ak_ token. Card PAN/CVV live encrypted in the vault, are revealed only inside</text>
-<text x="858" y="1920" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">SwapService, and are scrubbed after use. Tokens are stored as SHA-256 only.</text>
-<text x="846" y="1941" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• Service binds loopback, checks the Host header (DNS-rebinding guard), and refuses cross-site POSTs.</text>
-<text x="858" y="1957" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">Sandbox only: boot fails against any non-sandbox Miden URL; payout rail refuses mainnet.</text>
-<text x="846" y="1978" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• Money safety: append-only double-entry ledger with idempotency keys, row-locked daily limits, reserve-</text>
-<text x="858" y="1994" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">then-settle for top-ups and payouts, and 'held, never guessed' on any lost answer.</text>
-<text x="846" y="2015" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">• Production gaps recorded in the README: key custody and sweeping, USDC → Miden USD wallet funding,</text>
-<text x="858" y="2031" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">customer-managed card authorization, real merchant MCC, email verification, rate limits, settlement</text>
-<text x="858" y="2047" font-family="Helvetica, Arial, sans-serif" font-size="12.8" font-weight="normal" fill="#1f2937" text-anchor="start">hold.</text>
+<rect width="1200" height="560" fill="#fafaf9"/>
+<text x="40" y="44" font-size="24" font-weight="bold" fill="#1f2937">agent-cards: how it fits together</text>
+<text x="40" y="68" font-size="14" fill="#4b5563">Sandbox only.</text>
+
+<!-- clients -->
+<rect x="40" y="130" width="280" height="250" rx="10" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+<text x="60" y="164" font-size="18" font-weight="bold" fill="#1f2937">Clients</text>
+<text x="60" y="198" font-size="14" fill="#1f2937">Owner: dashboard or connect page</text>
+<text x="60" y="226" font-size="14" fill="#1f2937">Developer backend: product on our API</text>
+<text x="60" y="254" font-size="14" fill="#1f2937">Agent: MCP or REST, pays with a budget</text>
+<text x="60" y="282" font-size="14" fill="#1f2937">Merchant: checkouts, balance, payouts</text>
+<text x="60" y="350" font-size="13" fill="#4b5563">One token per role: uk_ dk_ ak_ mk_</text>
+
+<!-- service -->
+<rect x="440" y="130" width="320" height="250" rx="10" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
+<text x="460" y="164" font-size="18" font-weight="bold" fill="#1f2937">agent-cards service</text>
+<text x="460" y="188" font-size="13" fill="#4b5563">one Node process, 127.0.0.1:8787</text>
+<text x="460" y="226" font-size="14" fill="#1f2937">HTTP and MCP API</text>
+<text x="460" y="254" font-size="14" fill="#1f2937">AppService: KYC, limits, pay, checkout</text>
+<text x="460" y="282" font-size="14" fill="#1f2937">Deposit watcher, payout sender</text>
+<text x="460" y="310" font-size="14" fill="#1f2937">Ledger: every cent has two sides</text>
+
+<!-- postgres -->
+<rect x="440" y="440" width="320" height="80" rx="10" fill="#f3f4f6" stroke="#374151" stroke-width="2"/>
+<text x="460" y="474" font-size="16" font-weight="bold" fill="#1f2937">Postgres</text>
+<text x="460" y="498" font-size="13" fill="#4b5563">ledger, users, cards, spends, checkouts</text>
+
+<!-- miden -->
+<rect x="880" y="130" width="280" height="110" rx="10" fill="#ffedd5" stroke="#ea580c" stroke-width="2"/>
+<text x="900" y="164" font-size="18" font-weight="bold" fill="#1f2937">Miden Workspace API</text>
+<text x="900" y="192" font-size="14" fill="#1f2937">KYC, cards, top-ups,</text>
+<text x="900" y="214" font-size="14" fill="#1f2937">simulated card charges</text>
+
+<!-- base -->
+<rect x="880" y="270" width="280" height="110" rx="10" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/>
+<text x="900" y="304" font-size="18" font-weight="bold" fill="#1f2937">Base Sepolia (USDC)</text>
+<text x="900" y="332" font-size="14" fill="#1f2937">Deposits in, merchant</text>
+<text x="900" y="354" font-size="14" fill="#1f2937">payouts out</text>
+
+<!-- arrows -->
+<line x1="320" y1="255" x2="438" y2="255" stroke="#374151" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="379" y="244" font-size="13" fill="#374151" text-anchor="middle">HTTPS</text>
+
+<line x1="760" y1="185" x2="878" y2="185" stroke="#374151" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="819" y="174" font-size="13" fill="#374151" text-anchor="middle">cards</text>
+
+<line x1="878" y1="300" x2="762" y2="300" stroke="#374151" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="819" y="289" font-size="13" fill="#374151" text-anchor="middle">deposits</text>
+
+<line x1="762" y1="350" x2="878" y2="350" stroke="#374151" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="819" y="340" font-size="13" fill="#374151" text-anchor="middle">payouts</text>
+
+<line x1="600" y1="382" x2="600" y2="438" stroke="#374151" stroke-width="2.5" marker-start="url(#a)" marker-end="url(#a)"/>
 </svg>
