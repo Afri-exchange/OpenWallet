@@ -79,6 +79,8 @@ node --env-file=../../.env.sandbox-keys --import tsx server.ts     # http://127.
 
 With `AGENT_CARDS_AGENT_TOKEN` set, its order page has a **Pay as demo agent** button. See [its README](../examples/shop/README.md) for the flow, file by file.
 
+Building a product where your *users* each get a card and agents? The [developer demos](../examples/developer/README.md) cover that path (users, hosted connect page, limits, privacy mode, webhooks).
+
 ## 5. Connect a real agent
 
 An agent needs only its `ak_` token. Over MCP it gets `get_wallet`, `pay`, `list_transactions`, `get_checkout` and `pay_checkout`:
@@ -89,7 +91,7 @@ source .env.sandbox-keys   # or export the token yourself
 claude mcp add --transport http agent-cards "$AGENT_CARDS_URL/mcp" --header "Authorization: Bearer $AGENT_CARDS_AGENT_TOKEN"
 ```
 
-Then tell it: "pay the checkout at <checkoutUrl>". Other clients (stdio, plain REST) are in the [sandbox flow doc](sandbox-flow.md).
+Then tell it: "pay the checkout at <checkoutUrl>". To watch an agent use MCP from code, see [`agent-mcp.ts`](../examples/developer/agent-mcp.ts). Other clients (stdio, plain REST) are in the [sandbox flow doc](sandbox-flow.md).
 
 ## Troubleshooting
 

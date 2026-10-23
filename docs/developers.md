@@ -11,6 +11,8 @@ your agent ──ak_ token──► /mcp or /agent/v1/*  get_wallet, pay, pay_ch
 us ──signed webhook──► your server             kyc.updated, card.issued, funding.completed, spend.settled
 ```
 
+**Runnable examples:** [examples/developer](../examples/developer/README.md) has a script for each section below (onboarding, limits, privacy mode, MCP agent, webhook receiver).
+
 ## Roles and tokens
 
 | Token | Who holds it | What it opens |
@@ -53,12 +55,16 @@ curl -s localhost:8787/developer/v1/users/$UID/agents/$AID/fund -H "authorizatio
 
 The agent connects to `/mcp` (streamable HTTP, `Authorization: Bearer ak_...`) or calls `/agent/v1/*`. See [checkout SDK](../sdk/checkout/README.md) and [checkout swap](checkout-swap.md).
 
+Try it: [`01-onboard.ts`](../examples/developer/01-onboard.ts) runs steps 1 to 4 end to end.
+
 ## Letting users control their agents
 
 Two ways, same server-side checks:
 
 - **Hosted page** (`/connect`): per-payment limit, daily limit, merchant-category allowlist, pause, fund/reclaim. Nothing to build.
 - **Your own UI**: call `POST /developer/v1/users/:id/agents/:agentId/limits` from your server with what your user chose. Limits can never exceed the user's card (`quick`/`full` tier); the server says which limit and by how much.
+
+Demo: [`02-limits.ts`](../examples/developer/02-limits.ts) shows each refusal, a limit change, reclaim and revoke.
 
 Other agent calls: `POST .../agents/:agentId/{fund,reclaim,revoke}`, `GET /developer/v1/users/:id` (balances, agents, recent spends).
 
@@ -73,6 +79,8 @@ In privacy mode every payment is made with a **fresh one-time card** (a Miden Li
 - The user's agent limits, balances and idempotency work as before. If a one-time card cannot be made, the payment is voided and nothing is charged.
 - The mode is fixed when the user is created. Changing the default later affects new users only (money already on a user's own card could not pay a one-time card).
 - Details of a one-time card are deleted from our vault as soon as its checkout page has been filled.
+
+Demo: [`03-privacy.ts`](../examples/developer/03-privacy.ts).
 
 **Known limits (sandbox):**
 
@@ -110,6 +118,8 @@ function verify(secret, header, rawBody) {
   return v1.length === 64 && timingSafeEqual(want, Buffer.from(v1, "hex"));
 }
 ```
+
+A working receiver: [`webhook-receiver.ts`](../examples/developer/webhook-receiver.ts), with the verifier and its tests in [`webhook-verify.ts`](../examples/developer/webhook-verify.ts).
 
 Answer any 2xx. Anything else (or no answer in 10 seconds) is retried after 30s, 1m, 2m, ... up to 6h, eight tries in all; `GET /developer/v1/events` shows status, attempts and the last error (never the body). Redirects are not followed. We refuse webhook URLs that resolve to private addresses (outside the sandbox).
 

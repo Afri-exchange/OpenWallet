@@ -8,11 +8,15 @@ Virtual cards for AI agents, funded with stablecoins, built on the [Miden Worksp
 
 ## Integrating? Start here
 
-Building a merchant that takes agent payments, or connecting an agent? Follow **[docs/getting-started.md](docs/getting-started.md)**: `scripts/sandbox-up.sh`, then `node --import tsx scripts/dev-quickstart.ts` gives you sandbox keys (a merchant `mk_…` key and a funded test agent `ak_…` token, saved to the git-ignored `.env.sandbox-keys`) and proves them with a paid test checkout. Then read the [checkout SDK](sdk/checkout/README.md) and run the [sample shop](examples/shop/README.md). The rest of this README is for people working on agent-cards itself.
+Building a merchant that takes agent payments, or connecting an agent? Follow **[docs/getting-started.md](docs/getting-started.md)**: `scripts/sandbox-up.sh`, then `node --import tsx scripts/dev-quickstart.ts` gives you sandbox keys (a merchant `mk_…` key and a funded test agent `ak_…` token, saved to the git-ignored `.env.sandbox-keys`) and proves them with a paid test checkout. Then read the [checkout SDK](sdk/checkout/README.md) and run the [sample shop](examples/shop/README.md). Building for *users* who each get a card (hosted connect page, limits, privacy mode, webhooks)? Run the [developer demos](examples/developer/README.md). The rest of this README is for people working on agent-cards itself.
 
 Building a product where *your* users get cards for *their* agents (KYC flow, spend controls, webhooks, privacy mode with one-time cards)? Read **[docs/developers.md](docs/developers.md)**.
 
 ## How it fits together
+
+![agent-cards architecture](docs/architecture.png)
+
+_Source: [docs/architecture.svg](docs/architecture.svg)._
 
 ```
 agent ──► CardService ──► MidenClient ──► Miden Workspace API
