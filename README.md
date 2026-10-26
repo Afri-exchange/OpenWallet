@@ -8,7 +8,7 @@ Virtual cards for AI agents, funded with stablecoins, built on the [Miden Worksp
 
 - **Integrating a merchant or agent?** [docs/getting-started.md](docs/getting-started.md): `scripts/sandbox-up.sh`, then `node --import tsx scripts/dev-quickstart.ts` for sandbox keys and a paid test checkout. Then the [checkout SDK](sdk/checkout/README.md) and the [sample shop](examples/shop/README.md).
 - **Building a product where your users get cards for their agents?** [docs/developers.md](docs/developers.md) and the [developer demos](examples/developer/README.md).
-- **Working on agent-cards itself?** Read on, then [docs/](docs/README.md).
+- **Working on agent-cards itself?** Start with the [architecture](docs/architecture.md), then [docs/](docs/README.md).
 
 ## How it fits together
 
@@ -19,7 +19,7 @@ Virtual cards for AI agents, funded with stablecoins, built on the [Miden Worksp
 3. The owner gives agents budgets and limits. Agents pay over MCP or REST.
 4. Merchants take agent payments through checkouts and are paid out in USDC.
 
-Details: [sandbox-flow.md](docs/sandbox-flow.md), [deposit-watcher.md](docs/deposit-watcher.md), [checkout-payouts.md](docs/checkout-payouts.md).
+Full structure, flows and design decisions: [docs/architecture.md](docs/architecture.md). Details: [sandbox-flow.md](docs/sandbox-flow.md), [deposit-watcher.md](docs/deposit-watcher.md), [checkout-payouts.md](docs/checkout-payouts.md).
 
 ## Run the sandbox service
 
@@ -96,6 +96,7 @@ pnpm build
 
 | Doc | Covers |
 | --- | --- |
+| [docs/architecture.md](docs/architecture.md) | **Architecture:** components, ledger, key flows, data model, security, failure handling |
 | [docs/README.md](docs/README.md) | Index of all docs |
 | [docs/ops.md](docs/ops.md) | Runbooks: checkout or payout held for review |
 | [docs/checkout-payouts.md](docs/checkout-payouts.md) | Checkout, settlement, payouts, what blocks mainnet |
