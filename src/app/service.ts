@@ -348,8 +348,19 @@ export class AppService {
     await this.ensureDepositAddress(card.id);
   }
 
-  private async ensureDepositAddress(cardId: string): Promise<string> {
-    const have = await this.d.pool.query("SELECT address FROM deposit_address WHERE card_id = $1 AND derivation_index IS NOT NULL LIMIT 1", [cardId]);
+  /** One address per card even when two callers race in this process; they share the running call. */
+  private readonly addressing = new Map<string, Promise<string>>();
+
+  private ensureDepositAddress(cardId: string): Promise<string> {
+    const running = this.addressing.get(cardId);
+    if (running) return running;
+    const p = this.doEnsureDepositAddress(cardId).finally(() => this.addressing.delete(cardId));
+    this.addressing.set(cardId, p);
+    return p;
+  }
+
+  private async doEnsureDepositAddress(cardId: string): Promise<string> {
+    const have = await this.d.pool.query("SELECT address FROM deposit_address WHERE card_id = $1 AND derivation_index IS NOT NULL ORDER BY derivation_index LIMIT 1", [cardId]);
     if (have.rows[0]) return have.rows[0].address;
     const idx = num((await this.d.pool.query("SELECT nextval('deposit_derivation_seq') AS i")).rows[0].i);
     const address = (await this.d.deriveAddress(idx)).toLowerCase();
@@ -369,7 +380,7 @@ export class AppService {
       this.d.ledger.balance(accounts.holding(cardId)),
       this.d.ledger.balance(accounts.pending(cardId)),
       this.d.ledger.balance(accounts.card(cardId)),
-      this.d.pool.query("SELECT address FROM deposit_address WHERE card_id = $1 AND derivation_index IS NOT NULL LIMIT 1", [cardId]),
+      this.d.pool.query("SELECT address FROM deposit_address WHERE card_id = $1 AND derivation_index IS NOT NULL ORDER BY derivation_index LIMIT 1", [cardId]),
       this.agentsOf(cardId),
       this.d.pool.query("SELECT funding_id, amount_cents, status, detail, created_at FROM app_funding WHERE card_id = $1 ORDER BY created_at DESC LIMIT 20", [cardId]),
       this.d.ledger.history(accounts.holding(cardId)),

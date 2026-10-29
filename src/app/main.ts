@@ -78,7 +78,7 @@ const circle = env.CIRCLE_API_KEY && env.CIRCLE_ENTITY_SECRET
 if (circle && !env.CIRCLE_API_KEY!.startsWith("TEST_API_KEY:")) throw new Error("this service is sandbox-only: CIRCLE_API_KEY must be a Circle TEST_API_KEY");
 const circleDeposits = circle
   ? new CircleDeposits({
-      circle, ledger, addresses,
+      circle, ledger, addresses, log,
       onCredited: (r) => log(`circle deposit: ${r.amountCents} cents on ${r.chain} for card ${r.cardId}`),
       onDust: (d) => log(`dust ${d.dustBase} base units on ${d.txHash} (not credited)`),
     })
@@ -176,9 +176,9 @@ async function reconcileCircle(): Promise<void> {
   lastCircleSweep = Date.now();
   const r = await circleDeposits.reconcile();
   if (r.credited > 0) log(`circle reconcile: credited ${r.credited} missed deposit(s)`);
-  for (const id of r.mismatched) if (!circleMismatchLogged.has(id)) { circleMismatchLogged.add(id); log(`circle reconcile: transaction ${id} to one of our addresses is not the pinned USDC; not credited`); }
+  for (const i of r.ignored) if (!circleIgnoredLogged.has(i.id)) { circleIgnoredLogged.add(i.id); log(`circle reconcile: transfer ${i.id} to one of our addresses not credited (${i.reason})`); }
 }
-const circleMismatchLogged = new Set<string>();
+const circleIgnoredLogged = new Set<string>();
 const timer = setInterval(() => void background(), 5_000);
 
 const allowedHosts = [`127.0.0.1:${PORT}`, `localhost:${PORT}`, `[::1]:${PORT}`, ...(env.ALLOWED_HOSTS ? env.ALLOWED_HOSTS.split(",") : [])];

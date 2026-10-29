@@ -19,6 +19,7 @@ export const CIRCLE_USDC: Record<string, string> = { "BASE-SEPOLIA": BASE_SEPOLI
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Unknown notification key ids we will look up per minute, so an anonymous caller cannot make us spam Circle. */
 const KEY_LOOKUPS_PER_MIN = 20;
+const RECENT_PAGES = 10;
 
 type Fetch = typeof fetch;
 
@@ -116,11 +117,18 @@ export class CircleClient {
   async notificationKey(keyId: string): Promise<{ algorithm: string; publicKey: string }> {
     const hit = this.keys.get(keyId);
     if (hit) return hit;
+    // Only lookups that fail count against the budget, so unknown ids cannot starve a key we have not cached yet
+    // while every successful lookup is cached for good. Known-good traffic is never throttled.
     const t = Date.now();
     this.lookups = this.lookups.filter((x) => t - x < 60_000);
-    if (this.lookups.length >= KEY_LOOKUPS_PER_MIN) throw new CircleError("too many notification key lookups", 429);
-    this.lookups.push(t);
-    const k = (await this.call<{ data: { algorithm: string; publicKey: string } }>("GET", `/v2/notifications/publicKey/${encodeURIComponent(keyId)}`)).data;
+    if (this.lookups.length >= KEY_LOOKUPS_PER_MIN) throw new CircleError("too many failed notification key lookups", 429);
+    let k: { algorithm: string; publicKey: string };
+    try {
+      k = (await this.call<{ data: { algorithm: string; publicKey: string } }>("GET", `/v2/notifications/publicKey/${encodeURIComponent(keyId)}`)).data;
+    } catch (e) {
+      this.lookups.push(Date.now());
+      throw e;
+    }
     this.keys.set(keyId, k);
     return k;
   }
@@ -129,10 +137,24 @@ export class CircleClient {
     return (await this.call<{ data: { transaction: CircleTx } }>("GET", `/v1/w3s/transactions/${encodeURIComponent(id)}`)).data.transaction;
   }
 
-  /** Inbound transactions since `from` (one page of up to 50, newest first), for catching up on missed webhooks. */
+  /**
+   * Inbound transactions since `from`, newest first, following `pageAfter` (older) up to RECENT_PAGES pages of 50 for
+   * catching up on missed webhooks. Stops early on a short page or one that adds nothing new (cursor ignored).
+   */
   async recentInbound(from: Date): Promise<CircleTx[]> {
-    const q = new URLSearchParams({ txType: "INBOUND", state: "COMPLETE", blockchain: this.o.blockchain ?? "BASE-SEPOLIA", from: from.toISOString(), pageSize: "50" });
-    return (await this.call<{ data: { transactions: CircleTx[] } }>("GET", `/v1/w3s/transactions?${q}`)).data.transactions;
+    const out: CircleTx[] = [];
+    const seen = new Set<string>();
+    let after: string | undefined;
+    for (let page = 0; page < RECENT_PAGES; page++) {
+      const q = new URLSearchParams({ txType: "INBOUND", state: "COMPLETE", blockchain: this.o.blockchain ?? "BASE-SEPOLIA", from: from.toISOString(), pageSize: "50" });
+      if (after) q.set("pageAfter", after);
+      const txs = (await this.call<{ data: { transactions: CircleTx[] } }>("GET", `/v1/w3s/transactions?${q}`)).data.transactions;
+      const fresh = txs.filter((t) => !seen.has(t.id));
+      for (const t of fresh) { seen.add(t.id); out.push(t); }
+      if (txs.length < 50 || fresh.length === 0) break;
+      after = txs[txs.length - 1]!.id;
+    }
+    return out;
   }
 
   async token(tokenId: string): Promise<CircleToken> {
@@ -185,6 +207,8 @@ export interface CircleDepositsDeps {
   /** Called for every credit that was new (not a redelivery). */
   onCredited?: (r: Extract<CircleOutcome, { status: "credited" }>) => void;
   onDust?: (d: { txHash: string; dustBase: bigint }) => void;
+  /** Server-side only: the real Circle status behind a failed key lookup (the caller just sees 401). */
+  log?: (m: string) => void;
 }
 
 /** Turns Circle `transactions.inbound` webhooks into ledger credits. Throws on anything Circle should retry. */
@@ -199,6 +223,7 @@ export class CircleDeposits {
     try {
       key = await this.d.circle.notificationKey(headers.keyId);
     } catch (e) {
+      if (e instanceof CircleError) this.d.log?.(`circle notification key lookup failed: ${e.message}`);
       // Circle not knowing the key id (400/404) is the caller's fault (401). Circle refusing our own API key
       // (401/403), rate limits and 5xx are ours: rethrown so the real cause is visible and Circle retries.
       if (e instanceof CircleError && (e.status === 400 || e.status === 404)) throw new CircleError("unknown key id", 401);
@@ -219,20 +244,20 @@ export class CircleDeposits {
   /**
    * Catch-up for webhooks Circle could not deliver (tunnel down, service restarting): credits every COMPLETE
    * inbound USDC transfer from the last `lookbackMs` that the ledger has not seen. Safe to run often: the
-   * ledger key makes a repeat a no-op. Looks at one page of 50, so a longer outage needs a longer pass.
+   * ledger key makes a repeat a no-op. Reads up to 10 pages of 50 (recentInbound), so a window busier than 500 transfers is only partly covered.
    */
-  async reconcile(lookbackMs = 2 * 3600_000): Promise<{ checked: number; credited: number; mismatched: string[] }> {
+  async reconcile(lookbackMs = 2 * 3600_000): Promise<{ checked: number; credited: number; ignored: { id: string; reason: string }[] }> {
     if (!this.d.circle.recentInbound) throw new Error("this Circle client cannot list transactions");
     const txs = await this.d.circle.recentInbound(new Date(Date.now() - lookbackMs));
     let credited = 0;
-    const mismatched: string[] = [];
+    const ignored: { id: string; reason: string }[] = [];
     for (const tx of txs) {
       const r = await this.credit(tx);
       if (r.status === "credited" && r.isNew) credited++;
-      // To one of our addresses but not the pinned USDC: surfaced so a token mismatch is not silent.
-      if (r.status === "ignored" && r.reason === "not the pinned USDC contract") mismatched.push(tx.id);
+      // Transfers to our own addresses that were not credited (wrong token, odd shape, sub-cent) are the ones to surface.
+      if (r.status === "ignored" && r.reason !== "not one of our deposit addresses") ignored.push({ id: tx.id, reason: r.reason });
     }
-    return { checked: txs.length, credited, mismatched };
+    return { checked: txs.length, credited, ignored };
   }
 
   private async credit(tx: CircleTx): Promise<CircleOutcome> {

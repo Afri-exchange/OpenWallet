@@ -60,8 +60,8 @@ test("reconcile credits a missed deposit once and is a no-op on the next pass", 
     circle: { notificationKey: async () => ({ algorithm: "", publicKey: pub }), transaction: async () => full, token: async () => ({ symbol: "USDC", blockchain: "BASE-SEPOLIA", tokenAddress: BASE_SEPOLIA_USDC, decimals: 6 }), recentInbound: async () => [full, other] },
     ledger: s.ledger, addresses: { cardFor: async (a) => (a.toLowerCase() === ADDR ? "card1" : undefined) }, onCredited: (r) => credited.push(r.amountCents),
   });
-  assert.deepEqual(await d.reconcile(), { checked: 2, credited: 1, mismatched: [] });
-  assert.deepEqual(await d.reconcile(), { checked: 2, credited: 0, mismatched: [] });
+  assert.deepEqual(await d.reconcile(), { checked: 2, credited: 1, ignored: [] });
+  assert.deepEqual(await d.reconcile(), { checked: 2, credited: 0, ignored: [] });
   assert.deepEqual(credited, [500]);
   assert.equal(await s.ledger.balance(accounts.holding("card1")), 500);
 });
@@ -118,4 +118,32 @@ test("wallet creation sends a decryptable entity secret and a stable idempotency
   const plain = privateDecrypt({ key: rsa.privateKey, padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" }, Buffer.from(posts[0]!.body.entitySecretCiphertext, "base64"));
   assert.equal(plain.toString("hex"), secret);
   assert.deepEqual(posts[0]!.body.blockchains, ["BASE-SEPOLIA"]);
+});
+
+test("only failed key lookups use the budget, so unknown ids cannot starve a good key", async () => {
+  const good = "0b1a7c59-8d4e-4f3a-9c21-5e6f7a8b9c0d";
+  const f = (async (url: string) => (String(url).endsWith(good)
+    ? new Response(JSON.stringify({ data: { algorithm: "x", publicKey: "k" } }), { status: 200 })
+    : new Response(JSON.stringify({ message: "nope" }), { status: 404 }))) as typeof fetch;
+  const c = new CircleClient({ apiKey: "TEST_API_KEY:a:b", entitySecretHex: "ab".repeat(32), walletSetId: "ws", fetch: f });
+  for (let i = 0; i < 20; i++) await assert.rejects(c.notificationKey(`1b1a7c59-8d4e-4f3a-9c21-5e6f7a8b9c${String(i).padStart(2, "0")}`), /404/);
+  await assert.rejects(c.notificationKey("2b1a7c59-8d4e-4f3a-9c21-5e6f7a8b9c0d"), (e: unknown) => e instanceof CircleError && e.status === 429);
+  // Successful lookups are cached and never counted, so a good key is unaffected by the failures above.
+  const fresh = new CircleClient({ apiKey: "TEST_API_KEY:a:b", entitySecretHex: "ab".repeat(32), walletSetId: "ws", fetch: f });
+  for (let i = 0; i < 5; i++) await fresh.notificationKey(good); // successes never count
+  assert.equal((await fresh.notificationKey(good)).publicKey, "k");
+});
+
+test("recentInbound follows pageAfter and stops when a page adds nothing", async () => {
+  const mk = (n: number, from: number) => Array.from({ length: n }, (_, i) => ({ id: `t${from + i}` }));
+  const urls: string[] = [];
+  const f = (async (url: string) => {
+    urls.push(String(url));
+    const after = new URL(String(url)).searchParams.get("pageAfter");
+    const txs = after === null ? mk(50, 0) : after === "t49" ? mk(10, 50) : [];
+    return new Response(JSON.stringify({ data: { transactions: txs } }), { status: 200 });
+  }) as typeof fetch;
+  const c = new CircleClient({ apiKey: "TEST_API_KEY:a:b", entitySecretHex: "ab".repeat(32), walletSetId: "ws", fetch: f });
+  assert.equal((await c.recentInbound(new Date())).length, 60);
+  assert.equal(urls.length, 2);
 });
