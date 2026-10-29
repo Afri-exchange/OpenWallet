@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, privateDecrypt, sign, constants } from "node:crypto";
-import { CircleClient, CircleDeposits, usdcToBaseUnits, uuidFrom, type CircleTx } from "../src/chain/circle.js";
+import { CircleClient, CircleDeposits, CircleError, usdcToBaseUnits, uuidFrom, type CircleTx } from "../src/chain/circle.js";
+import { BASE_SEPOLIA_USDC } from "../src/chain/base-usdc-watcher.js";
 import { Ledger, accounts } from "../src/ledger/ledger.js";
 
 const ec = generateKeyPairSync("ec", { namedCurve: "P-256" });
@@ -12,13 +13,13 @@ const ADDR = "0x" + "ab".repeat(20);
 function setup(tx: Partial<CircleTx> = {}, symbol = "USDC") {
   const ledger = new Ledger();
   const full: CircleTx = { id: "t1", blockchain: "BASE-SEPOLIA", tokenId: "tok", destinationAddress: ADDR, transactionType: "INBOUND", state: "COMPLETE", amounts: ["12.345678"], txHash: "0xAAA", ...tx };
-  const circle = { notificationKey: async () => ({ algorithm: "ECDSA_SHA_256", publicKey: pub }), transaction: async () => full, tokenSymbol: async () => symbol };
+  const circle = { notificationKey: async () => ({ algorithm: "ECDSA_SHA_256", publicKey: pub }), transaction: async () => full, token: async () => ({ symbol, blockchain: "BASE-SEPOLIA", tokenAddress: BASE_SEPOLIA_USDC.toUpperCase().replace("0X","0x"), decimals: 6 }) };
   const dust: bigint[] = [];
   const d = new CircleDeposits({ circle, ledger, addresses: { cardFor: async (a) => (a.toLowerCase() === ADDR ? "card1" : undefined) }, onDust: (x) => dust.push(x.dustBase) });
   const body = JSON.stringify({ notificationType: "transactions.inbound", notification: { id: "t1", amounts: ["999"] } });
   return { ledger, d, body, dust };
 }
-const hdr = (b: string) => ({ signature: signBody(b), keyId: "k1" });
+const hdr = (b: string) => ({ signature: signBody(b), keyId: "0b1a7c59-8d4e-4f3a-9c21-5e6f7a8b9c0d" });
 
 test("a signed inbound USDC webhook credits the card once, from Circle's own amount", async () => {
   const s = setup();
@@ -32,14 +33,14 @@ test("a signed inbound USDC webhook credits the card once, from Circle's own amo
 
 test("bad or missing signatures are refused and credit nothing", async () => {
   const s = setup();
-  await assert.rejects(s.d.handle(s.body, { signature: signBody(s.body + " "), keyId: "k1" }), /bad signature/);
+  await assert.rejects(s.d.handle(s.body, { signature: signBody(s.body + " "), keyId: "0b1a7c59-8d4e-4f3a-9c21-5e6f7a8b9c0d" }), /bad signature/);
   await assert.rejects(s.d.handle(s.body, {}), /missing signature/);
   assert.equal(await s.ledger.balance(accounts.holding("card1")), 0);
 });
 
 test("ignored: not complete, not USDC, outbound, unknown address, unsupported chain", async () => {
   for (const [tx, sym, why] of [
-    [{ state: "CONFIRMED" }, "USDC", /state/], [{}, "EURC", /not USDC/], [{ transactionType: "OUTBOUND" }, "USDC", /not inbound/],
+    [{ state: "CONFIRMED" }, "USDC", /state/], [{}, "EURC", /pinned USDC/], [{ transactionType: "OUTBOUND" }, "USDC", /not inbound/],
     [{ destinationAddress: "0x" + "cd".repeat(20) }, "USDC", /not one of ours|not one of our/], [{ blockchain: "ETH" }, "USDC", /unsupported/],
   ] as const) {
     const s = setup(tx, sym);
@@ -56,13 +57,33 @@ test("reconcile credits a missed deposit once and is a no-op on the next pass", 
   const full: CircleTx = { id: "t9", blockchain: "BASE-SEPOLIA", tokenId: "tok", destinationAddress: ADDR, transactionType: "INBOUND", state: "COMPLETE", amounts: ["5"], txHash: "0xBBB" };
   const other: CircleTx = { ...full, id: "t8", txHash: "0xCCC", destinationAddress: "0x" + "cd".repeat(20) };
   const d = new CircleDeposits({
-    circle: { notificationKey: async () => ({ algorithm: "", publicKey: pub }), transaction: async () => full, tokenSymbol: async () => "USDC", recentInbound: async () => [full, other] },
+    circle: { notificationKey: async () => ({ algorithm: "", publicKey: pub }), transaction: async () => full, token: async () => ({ symbol: "USDC", blockchain: "BASE-SEPOLIA", tokenAddress: BASE_SEPOLIA_USDC, decimals: 6 }), recentInbound: async () => [full, other] },
     ledger: s.ledger, addresses: { cardFor: async (a) => (a.toLowerCase() === ADDR ? "card1" : undefined) }, onCredited: (r) => credited.push(r.amountCents),
   });
   assert.deepEqual(await d.reconcile(), { checked: 2, credited: 1 });
   assert.deepEqual(await d.reconcile(), { checked: 2, credited: 0 });
   assert.deepEqual(credited, [500]);
   assert.equal(await s.ledger.balance(accounts.holding("card1")), 500);
+});
+
+test("a token called USDC at the wrong contract is not credited", async () => {
+  const s = setup();
+  const bad = new CircleDeposits({
+    circle: { notificationKey: async () => ({ algorithm: "", publicKey: pub }), transaction: async () => ({ id: "t1", blockchain: "BASE-SEPOLIA", tokenId: "tok", destinationAddress: ADDR, transactionType: "INBOUND", state: "COMPLETE", amounts: ["5"], txHash: "0xDDD" }), token: async () => ({ symbol: "USDC", blockchain: "BASE-SEPOLIA", tokenAddress: "0x" + "11".repeat(20), decimals: 6 }) },
+    ledger: s.ledger, addresses: { cardFor: async () => "card1" },
+  });
+  assert.match(((await bad.handle(s.body, hdr(s.body))) as { reason: string }).reason, /pinned USDC/);
+  assert.equal(await s.ledger.balance(accounts.holding("card1")), 0);
+});
+
+test("a key id that is not a UUID, or that Circle does not know, is a 401 without a lookup storm", async () => {
+  const s = setup();
+  await assert.rejects(s.d.handle(s.body, { signature: signBody(s.body), keyId: "../x" }), /bad key id/);
+  const unknown = new CircleDeposits({
+    circle: { notificationKey: async () => { throw new CircleError("Circle GET -> 404", 404); }, transaction: async () => ({ id: "t" }), token: async () => ({}) },
+    ledger: s.ledger, addresses: { cardFor: async () => undefined },
+  });
+  await assert.rejects(unknown.handle(s.body, { signature: signBody(s.body), keyId: "0b1a7c59-8d4e-4f3a-9c21-5e6f7a8b9c0d" }), (e: unknown) => e instanceof CircleError && e.status === 401);
 });
 
 test("amount parsing is strict", () => {

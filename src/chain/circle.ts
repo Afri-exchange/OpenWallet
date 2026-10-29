@@ -1,6 +1,7 @@
 import { createHash, createPublicKey, publicEncrypt, randomUUID, verify, constants } from "node:crypto";
 import type { Ledger } from "../ledger/ledger.js";
 import { baseUnitsToCents } from "../ledger/units.js";
+import { BASE_SEPOLIA_USDC, ETHEREUM_SEPOLIA_USDC } from "./base-usdc-watcher.js";
 
 /**
  * Circle developer-controlled wallets as the deposit rail (sandbox): each card gets a Circle wallet created on
@@ -13,6 +14,11 @@ import { baseUnitsToCents } from "../ledger/units.js";
 export const CIRCLE_API = "https://api.circle.com";
 /** Circle blockchain id -> the ledger chain label the watcher rail already uses for that network. */
 export const CIRCLE_CHAINS: Record<string, string> = { "BASE-SEPOLIA": "base-sepolia", "ETH-SEPOLIA": "ethereum-sepolia" };
+/** The only USDC contract credited per Circle blockchain: a token that merely calls itself "USDC" is not enough. */
+export const CIRCLE_USDC: Record<string, string> = { "BASE-SEPOLIA": BASE_SEPOLIA_USDC, "ETH-SEPOLIA": ETHEREUM_SEPOLIA_USDC };
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Unknown notification key ids we will look up per minute, so an anonymous caller cannot make us spam Circle. */
+const KEY_LOOKUPS_PER_MIN = 20;
 
 type Fetch = typeof fetch;
 
@@ -46,7 +52,8 @@ export class CircleClient {
   private readonly f: Fetch;
   private pem: string | undefined;
   private readonly keys = new Map<string, { algorithm: string; publicKey: string }>();
-  private readonly symbols = new Map<string, string>();
+  private lookups: number[] = [];
+  private readonly tokens = new Map<string, CircleToken>();
 
   constructor(private readonly o: CircleOptions) {
     if (!/^[0-9a-fA-F]{64}$/.test(o.entitySecretHex)) throw new Error("the Circle entity secret must be 64 hex characters");
@@ -109,6 +116,10 @@ export class CircleClient {
   async notificationKey(keyId: string): Promise<{ algorithm: string; publicKey: string }> {
     const hit = this.keys.get(keyId);
     if (hit) return hit;
+    const t = Date.now();
+    this.lookups = this.lookups.filter((x) => t - x < 60_000);
+    if (this.lookups.length >= KEY_LOOKUPS_PER_MIN) throw new CircleError("too many notification key lookups", 429);
+    this.lookups.push(t);
     const k = (await this.call<{ data: { algorithm: string; publicKey: string } }>("GET", `/v2/notifications/publicKey/${encodeURIComponent(keyId)}`)).data;
     this.keys.set(keyId, k);
     return k;
@@ -124,14 +135,16 @@ export class CircleClient {
     return (await this.call<{ data: { transactions: CircleTx[] } }>("GET", `/v1/w3s/transactions?${q}`)).data.transactions;
   }
 
-  async tokenSymbol(tokenId: string): Promise<string | undefined> {
-    const hit = this.symbols.get(tokenId);
+  async token(tokenId: string): Promise<CircleToken> {
+    const hit = this.tokens.get(tokenId);
     if (hit) return hit;
-    const s = (await this.call<{ data: { token: { symbol?: string } } }>("GET", `/v1/w3s/tokens/${encodeURIComponent(tokenId)}`)).data.token.symbol;
-    if (s) this.symbols.set(tokenId, s);
-    return s;
+    const t = (await this.call<{ data: { token: CircleToken } }>("GET", `/v1/w3s/tokens/${encodeURIComponent(tokenId)}`)).data.token;
+    this.tokens.set(tokenId, t);
+    return t;
   }
 }
+
+export interface CircleToken { symbol?: string; blockchain?: string; tokenAddress?: string; decimals?: number }
 
 export interface CircleTx {
   id: string;
@@ -166,7 +179,7 @@ export type CircleOutcome =
   | { status: "ignored"; reason: string };
 
 export interface CircleDepositsDeps {
-  circle: Pick<CircleClient, "notificationKey" | "transaction" | "tokenSymbol"> & Partial<Pick<CircleClient, "recentInbound">>;
+  circle: Pick<CircleClient, "notificationKey" | "transaction" | "token"> & Partial<Pick<CircleClient, "recentInbound">>;
   ledger: Ledger;
   addresses: { cardFor(address: string): Promise<string | undefined> };
   /** Called for every credit that was new (not a redelivery). */
@@ -181,7 +194,15 @@ export class CircleDeposits {
   /** @throws CircleError with status 401 for a bad signature; any other throw means "retry later". */
   async handle(rawBody: string, headers: { signature?: string; keyId?: string }): Promise<CircleOutcome> {
     if (!headers.signature || !headers.keyId) throw new CircleError("missing signature headers", 401);
-    const key = await this.d.circle.notificationKey(headers.keyId);
+    if (!UUID.test(headers.keyId)) throw new CircleError("bad key id", 401);
+    let key;
+    try {
+      key = await this.d.circle.notificationKey(headers.keyId);
+    } catch (e) {
+      // Circle not knowing the key id is the caller's fault (401); anything else is ours (retry).
+      if (e instanceof CircleError && e.status !== undefined && e.status >= 400 && e.status < 500 && e.status !== 429) throw new CircleError("unknown key id", 401);
+      throw e;
+    }
     if (!verifyCircleSignature(rawBody, headers.signature, key.publicKey)) throw new CircleError("bad signature", 401);
 
     let body: { notificationType?: string; notification?: { id?: string } };
@@ -218,12 +239,14 @@ export class CircleDeposits {
     // Cheapest checks first: most listed transfers are not to our addresses, and each token lookup is an API call.
     const cardId = tx.destinationAddress ? await this.d.addresses.cardFor(tx.destinationAddress) : undefined;
     if (!cardId) return { status: "ignored", reason: "not one of our deposit addresses" };
-    if (!tx.tokenId || (await this.d.circle.tokenSymbol(tx.tokenId)) !== "USDC") return { status: "ignored", reason: "not USDC" };
+    const token = tx.tokenId ? await this.d.circle.token(tx.tokenId) : undefined;
+    if (!token || token.symbol !== "USDC" || token.blockchain !== tx.blockchain || token.decimals !== 6 || token.tokenAddress?.toLowerCase() !== CIRCLE_USDC[tx.blockchain!]) {
+      return { status: "ignored", reason: "not the pinned USDC contract" };
+    }
     if (!tx.txHash || tx.amounts?.length !== 1) return { status: "ignored", reason: "unexpected transaction shape" };
     const base = usdcToBaseUnits(tx.amounts[0]!);
     if (!base || base === 0n) return { status: "ignored", reason: "bad amount" };
     const { cents, dustBase } = baseUnitsToCents(base, 6);
-    if (dustBase > 0n) this.d.onDust?.({ txHash: tx.txHash, dustBase });
     if (cents === 0) return { status: "ignored", reason: "under one cent" };
 
     const label = `circle-${chain}`;
@@ -231,7 +254,10 @@ export class CircleDeposits {
     const isNew = !(await this.d.ledger.findByKey(`deposit:${label}:${tx.txHash.toLowerCase()}:0`));
     await this.d.ledger.confirmDeposit({ chain: label, asset: "USDC", cardId, amountCents: cents, txHash: tx.txHash, logIndex: 0 });
     const out = { status: "credited", cardId, amountCents: cents, chain, isNew } as const;
-    if (isNew) this.d.onCredited?.(out);
+    if (isNew) {
+      if (dustBase > 0n) this.d.onDust?.({ txHash: tx.txHash, dustBase });
+      this.d.onCredited?.(out);
+    }
     return out;
   }
 }

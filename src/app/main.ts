@@ -68,6 +68,7 @@ const hd = HdDepositWallet.loadOrCreate(env.DEPOSIT_WALLET_FILE ?? ".sandbox-wal
 
 // Circle deposit rail (sandbox): with CIRCLE_API_KEY + CIRCLE_ENTITY_SECRET set, new cards get a Circle wallet
 // (created on the fly) and inbound USDC arrives by webhook at POST /webhooks/circle. Without them: our own HD wallet.
+if (!env.CIRCLE_API_KEY !== !env.CIRCLE_ENTITY_SECRET) throw new Error("set both CIRCLE_API_KEY and CIRCLE_ENTITY_SECRET, or neither");
 const circle = env.CIRCLE_API_KEY && env.CIRCLE_ENTITY_SECRET
   ? new CircleClient({
       apiKey: env.CIRCLE_API_KEY, entitySecretHex: env.CIRCLE_ENTITY_SECRET,
@@ -183,7 +184,7 @@ const allowedHosts = [`127.0.0.1:${PORT}`, `localhost:${PORT}`, `[::1]:${PORT}`,
 // there would silently receive our traffic (tokens, KYC). If either bind fails, refuse to run.
 const hosts = HOST === "127.0.0.1" ? ["127.0.0.1", "::1"] : [HOST];
 const servers = hosts.map((h) => {
-  const s = createAppServer(app, { allowedHosts, checkout, swap, developers, circle: circleDeposits, log });
+  const s = createAppServer(app, { allowedHosts, checkout, swap, developers, circle: circleDeposits, webhookOnlyHosts: env.WEBHOOK_ONLY_HOSTS ? env.WEBHOOK_ONLY_HOSTS.split(",") : [], log });
   s.on("error", (e) => {
     log(`cannot listen on [${h}]:${PORT}: ${e.message}. Is something else on that port?`);
     process.exit(1);

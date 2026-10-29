@@ -115,10 +115,12 @@ function bearer(req: IncomingMessage): string | undefined {
  *   /merchant/v1/...       merchant checkout, balance and payout API, `Authorization: Bearer mk_...` (POST /merchant/v1/signup is open)
  *   /pay/<id>  /v1/checkouts/<id>   a checkout's public page and JSON (the unguessable id is the access)
  */
-export function createAppServer(app: AppService, opts: { allowedHosts: string[]; checkout?: CheckoutService; swap?: SwapService; developers?: DeveloperService; circle?: CircleDeposits; log?: (m: string) => void }): Server {
+export function createAppServer(app: AppService, opts: { allowedHosts: string[]; checkout?: CheckoutService; swap?: SwapService; developers?: DeveloperService; circle?: CircleDeposits; webhookOnlyHosts?: string[]; log?: (m: string) => void }): Server {
   const log = opts.log ?? (() => undefined);
-  const allowed = new Set(opts.allowedHosts.map((h) => h.toLowerCase()));
+  const allowed = new Set([...opts.allowedHosts, ...(opts.webhookOnlyHosts ?? [])].map((h) => h.toLowerCase()));
   // https too: behind a TLS tunnel the browser sends https://<host>; the host itself must still be allowed.
+  // Public tunnel hosts: they may only reach the Circle webhook and the health check, never the dashboard or APIs.
+  const webhookOnly = new Set((opts.webhookOnlyHosts ?? []).map((h) => h.toLowerCase()));
   const allowedOrigins = new Set([...allowed].flatMap((h) => [`http://${h}`, `https://${h}`]));
 
   // The owner API takes the owner's token (uk_) or a developer-issued session (us_, short-lived).
@@ -177,6 +179,7 @@ export function createAppServer(app: AppService, opts: { allowedHosts: string[];
     const url = new URL(req.url ?? "/", "http://local");
     const path = url.pathname;
     const m = req.method ?? "GET";
+    if (webhookOnly.has(host) && path !== "/webhooks/circle" && path !== "/healthz") throw new HttpError(404, "not found");
     if (m === "POST") {
       // Cross-site forms and text/plain fetches skip the CORS preflight; requiring JSON forces one, and a
       // browser Origin from anywhere else is refused outright.
