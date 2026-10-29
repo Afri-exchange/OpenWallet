@@ -176,7 +176,9 @@ async function reconcileCircle(): Promise<void> {
   lastCircleSweep = Date.now();
   const r = await circleDeposits.reconcile();
   if (r.credited > 0) log(`circle reconcile: credited ${r.credited} missed deposit(s)`);
+  for (const id of r.mismatched) if (!circleMismatchLogged.has(id)) { circleMismatchLogged.add(id); log(`circle reconcile: transaction ${id} to one of our addresses is not the pinned USDC; not credited`); }
 }
+const circleMismatchLogged = new Set<string>();
 const timer = setInterval(() => void background(), 5_000);
 
 const allowedHosts = [`127.0.0.1:${PORT}`, `localhost:${PORT}`, `[::1]:${PORT}`, ...(env.ALLOWED_HOSTS ? env.ALLOWED_HOSTS.split(",") : [])];

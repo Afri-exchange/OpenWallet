@@ -199,8 +199,9 @@ export class CircleDeposits {
     try {
       key = await this.d.circle.notificationKey(headers.keyId);
     } catch (e) {
-      // Circle not knowing the key id is the caller's fault (401); anything else is ours (retry).
-      if (e instanceof CircleError && e.status !== undefined && e.status >= 400 && e.status < 500 && e.status !== 429) throw new CircleError("unknown key id", 401);
+      // Circle not knowing the key id (400/404) is the caller's fault (401). Circle refusing our own API key
+      // (401/403), rate limits and 5xx are ours: rethrown so the real cause is visible and Circle retries.
+      if (e instanceof CircleError && (e.status === 400 || e.status === 404)) throw new CircleError("unknown key id", 401);
       throw e;
     }
     if (!verifyCircleSignature(rawBody, headers.signature, key.publicKey)) throw new CircleError("bad signature", 401);
@@ -220,15 +221,18 @@ export class CircleDeposits {
    * inbound USDC transfer from the last `lookbackMs` that the ledger has not seen. Safe to run often: the
    * ledger key makes a repeat a no-op. Looks at one page of 50, so a longer outage needs a longer pass.
    */
-  async reconcile(lookbackMs = 2 * 3600_000): Promise<{ checked: number; credited: number }> {
+  async reconcile(lookbackMs = 2 * 3600_000): Promise<{ checked: number; credited: number; mismatched: string[] }> {
     if (!this.d.circle.recentInbound) throw new Error("this Circle client cannot list transactions");
     const txs = await this.d.circle.recentInbound(new Date(Date.now() - lookbackMs));
     let credited = 0;
+    const mismatched: string[] = [];
     for (const tx of txs) {
       const r = await this.credit(tx);
       if (r.status === "credited" && r.isNew) credited++;
+      // To one of our addresses but not the pinned USDC: surfaced so a token mismatch is not silent.
+      if (r.status === "ignored" && r.reason === "not the pinned USDC contract") mismatched.push(tx.id);
     }
-    return { checked: txs.length, credited };
+    return { checked: txs.length, credited, mismatched };
   }
 
   private async credit(tx: CircleTx): Promise<CircleOutcome> {

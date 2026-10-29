@@ -60,8 +60,8 @@ test("reconcile credits a missed deposit once and is a no-op on the next pass", 
     circle: { notificationKey: async () => ({ algorithm: "", publicKey: pub }), transaction: async () => full, token: async () => ({ symbol: "USDC", blockchain: "BASE-SEPOLIA", tokenAddress: BASE_SEPOLIA_USDC, decimals: 6 }), recentInbound: async () => [full, other] },
     ledger: s.ledger, addresses: { cardFor: async (a) => (a.toLowerCase() === ADDR ? "card1" : undefined) }, onCredited: (r) => credited.push(r.amountCents),
   });
-  assert.deepEqual(await d.reconcile(), { checked: 2, credited: 1 });
-  assert.deepEqual(await d.reconcile(), { checked: 2, credited: 0 });
+  assert.deepEqual(await d.reconcile(), { checked: 2, credited: 1, mismatched: [] });
+  assert.deepEqual(await d.reconcile(), { checked: 2, credited: 0, mismatched: [] });
   assert.deepEqual(credited, [500]);
   assert.equal(await s.ledger.balance(accounts.holding("card1")), 500);
 });
@@ -84,6 +84,12 @@ test("a key id that is not a UUID, or that Circle does not know, is a 401 withou
     ledger: s.ledger, addresses: { cardFor: async () => undefined },
   });
   await assert.rejects(unknown.handle(s.body, { signature: signBody(s.body), keyId: "0b1a7c59-8d4e-4f3a-9c21-5e6f7a8b9c0d" }), (e: unknown) => e instanceof CircleError && e.status === 401);
+  // Circle refusing our own API key is our fault: not disguised as "unknown key id".
+  const refused = new CircleDeposits({
+    circle: { notificationKey: async () => { throw new CircleError("Circle GET -> 403", 403); }, transaction: async () => ({ id: "t" }), token: async () => ({}) },
+    ledger: s.ledger, addresses: { cardFor: async () => undefined },
+  });
+  await assert.rejects(refused.handle(s.body, { signature: signBody(s.body), keyId: "0b1a7c59-8d4e-4f3a-9c21-5e6f7a8b9c0d" }), (e: unknown) => e instanceof CircleError && e.status === 403);
 });
 
 test("amount parsing is strict", () => {
