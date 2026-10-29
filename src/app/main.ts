@@ -3,6 +3,7 @@
 import pg from "pg";
 import { AgentWallets } from "../agents/wallets.js";
 import { BASE_SEPOLIA_USDC, BaseUsdcWatcher, ETHEREUM_SEPOLIA_USDC, jsonRpc } from "../chain/base-usdc-watcher.js";
+import { CircleClient, CircleDeposits } from "../chain/circle.js";
 import { PgCursor, PgDepositAddresses } from "../chain/pg.js";
 import { CardLifecycle } from "../cards/lifecycle.js";
 import { CardService } from "../cards/service.js";
@@ -65,11 +66,30 @@ const wallets = new AgentWallets(ledger);
 const addresses = new PgDepositAddresses(pool, chain);
 const hd = HdDepositWallet.loadOrCreate(env.DEPOSIT_WALLET_FILE ?? ".sandbox-wallet.json");
 
+// Circle deposit rail (sandbox): with CIRCLE_API_KEY + CIRCLE_ENTITY_SECRET set, new cards get a Circle wallet
+// (created on the fly) and inbound USDC arrives by webhook at POST /webhooks/circle. Without them: our own HD wallet.
+const circle = env.CIRCLE_API_KEY && env.CIRCLE_ENTITY_SECRET
+  ? new CircleClient({
+      apiKey: env.CIRCLE_API_KEY, entitySecretHex: env.CIRCLE_ENTITY_SECRET,
+      walletSetId: need("CIRCLE_WALLET_SET_ID"),
+    })
+  : undefined;
+if (circle && !env.CIRCLE_API_KEY!.startsWith("TEST_API_KEY:")) throw new Error("this service is sandbox-only: CIRCLE_API_KEY must be a Circle TEST_API_KEY");
+const circleDeposits = circle
+  ? new CircleDeposits({
+      circle, ledger, addresses,
+      onCredited: (r) => log(`circle deposit: ${r.amountCents} cents on ${r.chain} for card ${r.cardId}`),
+      onDust: (d) => log(`dust ${d.dustBase} base units on ${d.txHash} (not credited)`),
+    })
+  : undefined;
+if (circle) log("Circle deposits on: new deposit addresses are Circle wallets (BASE-SEPOLIA); webhook at /webhooks/circle");
+
 // The developer service needs the app, and the app reports events to it: tie the knot with a late binding.
 let developersRef: DeveloperService | undefined;
 const app = new AppService({
   pool, ledger, miden, lifecycle, cards, funding, wallets, addresses,
-  deriveAddress: (i) => hd.address(i), tiers: DEFAULT_TIERS, chain, sandbox, simulatedDeposits, log,
+  deriveAddress: circle ? async (i) => (await circle.createDepositWallet(i)).address : (i) => hd.address(i), tiers: DEFAULT_TIERS, chain, sandbox, simulatedDeposits, log,
+  ...(circle && env.CHAIN_WATCHER !== "1" ? { depositNetworks: [chain], depositRail: "circle" as const } : {}),
   onEvent: (userId, type, data) => developersRef?.onEvent(userId, type, data) ?? Promise.resolve(),
 });
 await app.restore();
@@ -101,7 +121,8 @@ const networks = [
   },
 ];
 const stop = new AbortController();
-for (const n of networks) {
+// With Circle on, deposits come by webhook; the pollers only matter for older HD addresses (CHAIN_WATCHER=1).
+for (const n of circle && env.CHAIN_WATCHER !== "1" ? [] : networks) {
   if ((await n.cursor.get()) === undefined) {
     const head = Number.parseInt((await n.rpc("eth_blockNumber", [])) as string, 16);
     await n.cursor.set(head - 20);
@@ -143,8 +164,17 @@ async function background(): Promise<void> {
   // Not awaited: a slow webhook endpoint must not hold up reconcile and payouts (deliverDue is single-flight).
   void developers.deliverDue().catch((e) => log(`webhooks: ${(e as Error).message}`));
   await swap?.reconcile().catch((e) => log(`swap reconcile: ${(e as Error).message}`));
+  await reconcileCircle().catch((e) => log(`circle reconcile: ${(e as Error).message}`));
   await checkout.sync().catch((e) => log(`checkouts: ${(e as Error).message}`));
   await payouts.tick().catch((e) => log(`payouts: ${(e as Error).message}`));
+}
+// Catch up on Circle deposits whose webhook never arrived (tunnel down, restart). At most once a minute.
+let lastCircleSweep = 0;
+async function reconcileCircle(): Promise<void> {
+  if (!circleDeposits || Date.now() - lastCircleSweep < 60_000) return;
+  lastCircleSweep = Date.now();
+  const r = await circleDeposits.reconcile();
+  if (r.credited > 0) log(`circle reconcile: credited ${r.credited} missed deposit(s)`);
 }
 const timer = setInterval(() => void background(), 5_000);
 
@@ -153,7 +183,7 @@ const allowedHosts = [`127.0.0.1:${PORT}`, `localhost:${PORT}`, `[::1]:${PORT}`,
 // there would silently receive our traffic (tokens, KYC). If either bind fails, refuse to run.
 const hosts = HOST === "127.0.0.1" ? ["127.0.0.1", "::1"] : [HOST];
 const servers = hosts.map((h) => {
-  const s = createAppServer(app, { allowedHosts, checkout, swap, developers, log });
+  const s = createAppServer(app, { allowedHosts, checkout, swap, developers, circle: circleDeposits, log });
   s.on("error", (e) => {
     log(`cannot listen on [${h}]:${PORT}: ${e.message}. Is something else on that port?`);
     process.exit(1);

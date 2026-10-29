@@ -1,5 +1,7 @@
 # Base USDC deposit watcher
 
+An alternative rail that needs no polling (Circle wallets plus webhooks) is in [circle-deposits.md](circle-deposits.md).
+
 Code: `src/chain/base-usdc-watcher.ts` (watcher), `src/chain/pg.ts` (Postgres cursor and address book), `src/ledger/units.ts` (unit conversion), migration `src/ledger/migrations/002_chain.sql`. Wired up in `src/app/main.ts`. Status as of 2026-10-19: the watcher is unit-tested and was checked read-only against Base mainnet (three public RPCs; credited cents matched an independent sum of that block's transfers). The Postgres classes typecheck and have tests (`test/chain-pg.test.ts`, run only when `DATABASE_URL` is set); README item 4 records that they had not yet been run against Postgres. The sandbox service is configured to use them on **Base Sepolia**; I have not confirmed a real Sepolia deposit end to end.
 
 ## Second network: Ethereum Sepolia

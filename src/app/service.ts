@@ -28,11 +28,18 @@ export interface AppDeps {
   funding: FundingSource;
   wallets: AgentWallets;
   addresses: PgDepositAddresses;
-  /** Deposit address for an HD index (our own wallet). */
-  deriveAddress: (index: number) => string;
+  /**
+   * The deposit-address provider: the address for a unique index. Our HD wallet today (sync); a custody
+   * provider such as Utila would call its API here (hence async), keyed by the same index.
+   */
+  deriveAddress: (index: number) => string | Promise<string>;
   tiers: Record<Tier, TierLimits>;
   /** Ledger chain label for real deposits, e.g. "base-sepolia". */
   chain: string;
+  /** Networks a user may send USDC on, shown on the dashboard. Default: the chain plus Ethereum Sepolia (both watched). */
+  depositNetworks?: string[];
+  /** How deposits are detected, for the dashboard's wording: Circle webhooks or our chain pollers. */
+  depositRail?: "circle" | "chain";
   /** Miden sandbox: agents pay through Miden's simulated authorization. */
   sandbox: boolean;
   /** Sandbox only, and only when explicitly switched on (ALLOW_SIMULATED_DEPOSITS=1): fake deposits. */
@@ -345,7 +352,7 @@ export class AppService {
     const have = await this.d.pool.query("SELECT address FROM deposit_address WHERE card_id = $1 AND derivation_index IS NOT NULL LIMIT 1", [cardId]);
     if (have.rows[0]) return have.rows[0].address;
     const idx = num((await this.d.pool.query("SELECT nextval('deposit_derivation_seq') AS i")).rows[0].i);
-    const address = this.d.deriveAddress(idx).toLowerCase();
+    const address = (await this.d.deriveAddress(idx)).toLowerCase();
     await this.d.addresses.add(address, cardId);
     await this.d.pool.query("UPDATE deposit_address SET derivation_index = $2 WHERE address = $1", [address, idx]);
     return address;
@@ -384,7 +391,7 @@ export class AppService {
         },
         lifetimeFundedCents: funded,
         midenCardBalanceDollars: midenBalance,
-        deposit: { chain: this.d.chain, asset: "USDC", address: address.rows[0]?.address ?? null },
+        deposit: { chain: this.d.chain, asset: "USDC", address: address.rows[0]?.address ?? null, networks: this.d.depositNetworks ?? [this.d.chain, "ethereum-sepolia"], rail: this.d.depositRail ?? "chain" },
         deposits: deposits.filter((t) => t.kind === "deposit").reverse().slice(0, 20).map((t) => ({
           reference: t.reference,
           amountCents: t.postings.find((p) => p.account === accounts.holding(cardId))?.amountCents ?? 0,

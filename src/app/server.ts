@@ -10,6 +10,7 @@ import { buildAgentMcpServer } from "./mcp.js";
 import { AppError, type AgentPrincipal, type AppService } from "./service.js";
 import type { SwapRequest, SwapService } from "../checkout-swap/swap.js";
 import type { DeveloperService } from "../developers/service.js";
+import { CircleError, type CircleDeposits } from "../chain/circle.js";
 
 const WEB = join(dirname(fileURLToPath(import.meta.url)), "web");
 /** Page routes and the only files served under /assets. Anything else is a 404, so no path can leave WEB. */
@@ -87,6 +88,17 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
   }
 }
 
+async function readRaw(req: IncomingMessage): Promise<string> {
+  let size = 0;
+  const chunks: Buffer[] = [];
+  for await (const c of req) {
+    size += (c as Buffer).length;
+    if (size > MAX_BODY) throw new HttpError(413, "request body too large");
+    chunks.push(c as Buffer);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 function bearer(req: IncomingMessage): string | undefined {
   const m = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization ?? "");
   return m?.[1];
@@ -103,10 +115,11 @@ function bearer(req: IncomingMessage): string | undefined {
  *   /merchant/v1/...       merchant checkout, balance and payout API, `Authorization: Bearer mk_...` (POST /merchant/v1/signup is open)
  *   /pay/<id>  /v1/checkouts/<id>   a checkout's public page and JSON (the unguessable id is the access)
  */
-export function createAppServer(app: AppService, opts: { allowedHosts: string[]; checkout?: CheckoutService; swap?: SwapService; developers?: DeveloperService; log?: (m: string) => void }): Server {
+export function createAppServer(app: AppService, opts: { allowedHosts: string[]; checkout?: CheckoutService; swap?: SwapService; developers?: DeveloperService; circle?: CircleDeposits; log?: (m: string) => void }): Server {
   const log = opts.log ?? (() => undefined);
   const allowed = new Set(opts.allowedHosts.map((h) => h.toLowerCase()));
-  const allowedOrigins = new Set([...allowed].map((h) => `http://${h}`));
+  // https too: behind a TLS tunnel the browser sends https://<host>; the host itself must still be allowed.
+  const allowedOrigins = new Set([...allowed].flatMap((h) => [`http://${h}`, `https://${h}`]));
 
   // The owner API takes the owner's token (uk_) or a developer-issued session (us_, short-lived).
   const userOf = async (req: IncomingMessage, opts2: { ownerTokenOnly?: boolean } = {}): Promise<string> => {
@@ -181,6 +194,20 @@ export function createAppServer(app: AppService, opts: { allowedHosts: string[];
       return sendFile(req, res, name, false);
     }
     if (m === "GET" && path === "/healthz") return send(res, 200, { ok: true });
+
+    // Circle deposit webhooks: signed by Circle, verified over the raw body. A non-2xx makes Circle retry.
+    if (m === "POST" && path === "/webhooks/circle") {
+      if (!opts.circle) throw new HttpError(404, "Circle deposits are not enabled on this server");
+      const h = (n: string): string | undefined => { const v = req.headers[n]; return Array.isArray(v) ? v[0] : v; };
+      try {
+        const r = await opts.circle.handle(await readRaw(req), { signature: h("x-circle-signature"), keyId: h("x-circle-key-id") });
+        if (r.status === "ignored" && !/^type /.test(r.reason)) log(`circle webhook ignored: ${r.reason}`);
+        return send(res, 200, { ok: true, status: r.status });
+      } catch (e) {
+        if (e instanceof CircleError && e.status === 401) { log(`circle webhook refused: ${e.message}`); throw new HttpError(401, "invalid signature"); }
+        throw e;
+      }
+    }
 
     // ----- public checkout page and JSON -----
     const pub = /^\/(pay|v1\/checkouts)\/(cs_[a-f0-9]{32})$/.exec(path);
