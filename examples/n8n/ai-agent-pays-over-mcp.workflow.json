@@ -1,0 +1,38 @@
+{
+  "name": "Agent Card: AI agent pays (chat, MCP)",
+  "nodes": [
+    {
+      "parameters": { "options": {} },
+      "id": "c1000000-0000-4000-8000-000000000001", "name": "Chat", "type": "@n8n/n8n-nodes-langchain.chatTrigger", "typeVersion": 1.1, "position": [0, 300],
+      "webhookId": "c1000000-0000-4000-8000-0000000000aa",
+      "notes": "Try: \"Pay checkout cs_... for me, it should be $1.50\". Make a checkout with the 'agent pays a checkout' workflow or the merchant SDK."
+    },
+    {
+      "parameters": { "options": { "systemMessage": "You are a shopping agent with an Agent Card wallet, reached through the agent-cards MCP tools. Before paying, call get_checkout to see what a checkout is and what it costs, and get_wallet to check your balance and limits. Only pay with pay_checkout when the price matches what the user expects, and always pass that price as max_amount_usd. If a payment comes back processing, say so and do not pay again. For a Stripe checkout link (https://checkout.stripe.com/c/pay/... or https://buy.stripe.com/...), use pay_hosted_checkout with the exact total the user gives you as amount_usd, a short merchant name, and an idempotency_key of n8n- followed by the link's last path segment; if it comes back processing, check get_hosted_checkout_payment instead of paying again, and if it comes back challenge, stop and tell the user. Report the checkout id or swap id, amount, and final status." } },
+      "id": "c1000000-0000-4000-8000-000000000002", "name": "AI Agent", "type": "@n8n/n8n-nodes-langchain.agent", "typeVersion": 3.1, "position": [260, 300]
+    },
+    {
+      "parameters": { "model": { "__rl": true, "mode": "id", "value": "claude-sonnet-5-5" }, "options": {} },
+      "id": "c1000000-0000-4000-8000-000000000003", "name": "Claude", "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic", "typeVersion": 1.3, "position": [180, 520],
+      "notes": "Needs an Anthropic API credential (Console key, sk-ant-api03-...)."
+    },
+    {
+      "parameters": {
+        "endpointUrl": "http://127.0.0.1:8787/mcp",
+        "serverTransport": "httpStreamable",
+        "authentication": "headerAuth",
+        "include": "selected",
+        "includeTools": ["get_wallet", "get_checkout", "pay_checkout", "pay_hosted_checkout", "get_hosted_checkout_payment", "list_transactions"],
+        "options": {}
+      },
+      "id": "c1000000-0000-4000-8000-000000000004", "name": "Agent Card (MCP)", "type": "@n8n/n8n-nodes-langchain.mcpClientTool", "typeVersion": 1.2, "position": [400, 520],
+      "credentials": { "httpHeaderAuth": { "id": "agentCardsAgent0001", "name": "Agent Cards agent (ak_)" } }
+    }
+  ],
+  "connections": {
+    "Chat": { "main": [[{ "node": "AI Agent", "type": "main", "index": 0 }]] },
+    "Claude": { "ai_languageModel": [[{ "node": "AI Agent", "type": "ai_languageModel", "index": 0 }]] },
+    "Agent Card (MCP)": { "ai_tool": [[{ "node": "AI Agent", "type": "ai_tool", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }, "pinData": {}, "active": false, "id": "agentCardsAiPay001"
+}

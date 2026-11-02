@@ -1,0 +1,485 @@
+{
+  "name": "Agent Card: agent pays a checkout",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "a1000000-0000-4000-8000-000000000001",
+      "name": "Run it",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "o1",
+              "name": "baseUrl",
+              "value": "http://127.0.0.1:8787",
+              "type": "string"
+            },
+            {
+              "id": "o2",
+              "name": "amountCents",
+              "value": 150,
+              "type": "number"
+            },
+            {
+              "id": "o3",
+              "name": "description",
+              "value": "n8n demo: 1 sticker pack",
+              "type": "string"
+            },
+            {
+              "id": "o4",
+              "name": "reference",
+              "value": "={{ 'n8n-' + $now.toMillis() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000002",
+      "name": "Order",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ],
+      "notes": "Change the amount and description here. baseUrl is the agent-cards sandbox service."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.baseUrl }}/merchant/v1/checkouts",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ amountCents: $json.amountCents, description: $json.description, reference: $json.reference, idempotencyKey: $json.reference }) }}",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000003",
+      "name": "Merchant: create checkout",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "agentCardsMerchant01",
+          "name": "Agent Cards merchant (mk_)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Order').item.json.baseUrl }}/agent/v1/wallet",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000004",
+      "name": "Agent: check wallet",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "agentCardsAgent0001",
+          "name": "Agent Cards agent (ak_)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.balanceCents >= $('Merchant: create checkout').item.json.amountCents && $json.remainingTodayCents >= $('Merchant: create checkout').item.json.amountCents && $json.limits.perTransactionCents >= $('Merchant: create checkout').item.json.amountCents }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000005",
+      "name": "Can the agent afford it?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Order').item.json.baseUrl }}/agent/v1/checkouts/{{ $('Merchant: create checkout').item.json.checkoutId }}/pay",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ maxAmountCents: $('Order').item.json.amountCents }) }}",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000006",
+      "name": "Agent: pay checkout",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        200
+      ],
+      "notes": "maxAmountCents makes the agent refuse if the checkout's price is higher than the order said.",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "agentCardsAgent0001",
+          "name": "Agent Cards agent (ak_)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Order').item.json.baseUrl }}/merchant/v1/checkouts/{{ $('Merchant: create checkout').item.json.checkoutId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000007",
+      "name": "Merchant: confirm payment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        200
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "agentCardsMerchant01",
+          "name": "Agent Cards merchant (mk_)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "r1",
+              "name": "result",
+              "value": "={{ $json.status === 'paid' ? 'PAID: fulfil the order' : 'NOT PAID (' + $json.status + ')' }}",
+              "type": "string"
+            },
+            {
+              "id": "r2",
+              "name": "checkoutId",
+              "value": "={{ $json.checkoutId }}",
+              "type": "string"
+            },
+            {
+              "id": "r3",
+              "name": "reference",
+              "value": "={{ $json.reference }}",
+              "type": "string"
+            },
+            {
+              "id": "r4",
+              "name": "amountCents",
+              "value": "={{ $json.amountCents }}",
+              "type": "number"
+            },
+            {
+              "id": "r5",
+              "name": "paidAt",
+              "value": "={{ $json.paidAt }}",
+              "type": "string"
+            },
+            {
+              "id": "r6",
+              "name": "paymentId",
+              "value": "={{ $json.payment ? $json.payment.paymentId : null }}",
+              "type": "string"
+            },
+            {
+              "id": "r7",
+              "name": "agentBalanceBeforeCents",
+              "value": "={{ $('Agent: check wallet').item.json.balanceCents }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000008",
+      "name": "Result",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1760,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Order').item.json.baseUrl }}/merchant/v1/checkouts/{{ $('Merchant: create checkout').item.json.checkoutId }}/cancel",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000009",
+      "name": "Merchant: cancel checkout",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        420
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "agentCardsMerchant01",
+          "name": "Agent Cards merchant (mk_)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "n1",
+              "name": "result",
+              "value": "={{ 'NOT PAID: the agent cannot afford ' + $('Order').item.json.amountCents + 'c (balance ' + $('Agent: check wallet').item.json.balanceCents + 'c, left today ' + $('Agent: check wallet').item.json.remainingTodayCents + 'c, per-payment cap ' + $('Agent: check wallet').item.json.limits.perTransactionCents + 'c). Checkout canceled.' }}",
+              "type": "string"
+            },
+            {
+              "id": "n2",
+              "name": "checkoutId",
+              "value": "={{ $json.checkoutId }}",
+              "type": "string"
+            },
+            {
+              "id": "n3",
+              "name": "status",
+              "value": "={{ $json.status }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000010",
+      "name": "Not paid",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1320,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "p1",
+              "leftValue": "={{ $json.status === 'processing' && $runIndex < 16 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1000000-0000-4000-8000-000000000020",
+      "name": "Still processing?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1540,
+        200
+      ],
+      "notes": "The card network's answer can be late (the service settles it in the background, usually within a minute). Never fulfil while processing. Gives up after 16 checks (about 4 minutes)."
+    },
+    {
+      "parameters": {
+        "amount": 15
+      },
+      "id": "a1000000-0000-4000-8000-000000000021",
+      "name": "Wait 15s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1540,
+        380
+      ],
+      "webhookId": "a1000000-0000-4000-8000-000000000022"
+    }
+  ],
+  "connections": {
+    "Run it": {
+      "main": [
+        [
+          {
+            "node": "Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Order": {
+      "main": [
+        [
+          {
+            "node": "Merchant: create checkout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merchant: create checkout": {
+      "main": [
+        [
+          {
+            "node": "Agent: check wallet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent: check wallet": {
+      "main": [
+        [
+          {
+            "node": "Can the agent afford it?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Can the agent afford it?": {
+      "main": [
+        [
+          {
+            "node": "Agent: pay checkout",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merchant: cancel checkout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent: pay checkout": {
+      "main": [
+        [
+          {
+            "node": "Merchant: confirm payment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merchant: confirm payment": {
+      "main": [
+        [
+          {
+            "node": "Still processing?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merchant: cancel checkout": {
+      "main": [
+        [
+          {
+            "node": "Not paid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Still processing?": {
+      "main": [
+        [
+          {
+            "node": "Wait 15s",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 15s": {
+      "main": [
+        [
+          {
+            "node": "Merchant: confirm payment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "active": false,
+  "id": "agentCardsPay0001"
+}
