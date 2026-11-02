@@ -9,6 +9,7 @@ import { capPolicy, type Tier, type TierLimits } from "../cards/tiers.js";
 import { MidenDuplicateReferenceError, referenceFor } from "../funding/miden-wallet.js";
 import type { FundingSource } from "../funding/types.js";
 import { accounts, LedgerError, type Ledger, type LedgerTransaction } from "../ledger/ledger.js";
+import { parseSimDeposit, SIM_DEPOSIT_PREFIX } from "../chain/sim-deposit.js";
 import { MidenApiError, type MidenClient } from "../miden/client.js";
 import type { IndividualKyc } from "../users/onboarding.js";
 
@@ -28,11 +29,18 @@ export interface AppDeps {
   funding: FundingSource;
   wallets: AgentWallets;
   addresses: PgDepositAddresses;
-  /** Deposit address for an HD index (our own wallet). */
-  deriveAddress: (index: number) => string;
+  /**
+   * The deposit-address provider: the address for a unique index. Our HD wallet today (sync); a custody
+   * provider such as Utila would call its API here (hence async), keyed by the same index.
+   */
+  deriveAddress: (index: number) => string | Promise<string>;
   tiers: Record<Tier, TierLimits>;
   /** Ledger chain label for real deposits, e.g. "base-sepolia". */
   chain: string;
+  /** Networks a user may send USDC on, shown on the dashboard. Default: the chain plus Ethereum Sepolia (both watched). */
+  depositNetworks?: string[];
+  /** How deposits are detected, for the dashboard's wording: Circle webhooks or our chain pollers. */
+  depositRail?: "circle" | "chain";
   /** Miden sandbox: agents pay through Miden's simulated authorization. */
   sandbox: boolean;
   /** Sandbox only, and only when explicitly switched on (ALLOW_SIMULATED_DEPOSITS=1): fake deposits. */
@@ -341,11 +349,22 @@ export class AppService {
     await this.ensureDepositAddress(card.id);
   }
 
-  private async ensureDepositAddress(cardId: string): Promise<string> {
-    const have = await this.d.pool.query("SELECT address FROM deposit_address WHERE card_id = $1 AND derivation_index IS NOT NULL LIMIT 1", [cardId]);
+  /** One address per card even when two callers race in this process; they share the running call. */
+  private readonly addressing = new Map<string, Promise<string>>();
+
+  private ensureDepositAddress(cardId: string): Promise<string> {
+    const running = this.addressing.get(cardId);
+    if (running) return running;
+    const p = this.doEnsureDepositAddress(cardId).finally(() => this.addressing.delete(cardId));
+    this.addressing.set(cardId, p);
+    return p;
+  }
+
+  private async doEnsureDepositAddress(cardId: string): Promise<string> {
+    const have = await this.d.pool.query("SELECT address FROM deposit_address WHERE card_id = $1 AND derivation_index IS NOT NULL ORDER BY derivation_index LIMIT 1", [cardId]);
     if (have.rows[0]) return have.rows[0].address;
     const idx = num((await this.d.pool.query("SELECT nextval('deposit_derivation_seq') AS i")).rows[0].i);
-    const address = this.d.deriveAddress(idx).toLowerCase();
+    const address = (await this.d.deriveAddress(idx)).toLowerCase();
     await this.d.addresses.add(address, cardId);
     await this.d.pool.query("UPDATE deposit_address SET derivation_index = $2 WHERE address = $1", [address, idx]);
     return address;
@@ -362,7 +381,7 @@ export class AppService {
       this.d.ledger.balance(accounts.holding(cardId)),
       this.d.ledger.balance(accounts.pending(cardId)),
       this.d.ledger.balance(accounts.card(cardId)),
-      this.d.pool.query("SELECT address FROM deposit_address WHERE card_id = $1 AND derivation_index IS NOT NULL LIMIT 1", [cardId]),
+      this.d.pool.query("SELECT address FROM deposit_address WHERE card_id = $1 AND derivation_index IS NOT NULL ORDER BY derivation_index LIMIT 1", [cardId]),
       this.agentsOf(cardId),
       this.d.pool.query("SELECT funding_id, amount_cents, status, detail, created_at FROM app_funding WHERE card_id = $1 ORDER BY created_at DESC LIMIT 20", [cardId]),
       this.d.ledger.history(accounts.holding(cardId)),
@@ -384,7 +403,7 @@ export class AppService {
         },
         lifetimeFundedCents: funded,
         midenCardBalanceDollars: midenBalance,
-        deposit: { chain: this.d.chain, asset: "USDC", address: address.rows[0]?.address ?? null },
+        deposit: { chain: this.d.chain, asset: "USDC", address: address.rows[0]?.address ?? null, networks: this.d.depositNetworks ?? [this.d.chain, "ethereum-sepolia"], rail: this.d.depositRail ?? "chain" },
         deposits: deposits.filter((t) => t.kind === "deposit").reverse().slice(0, 20).map((t) => ({
           reference: t.reference,
           amountCents: t.postings.find((p) => p.account === accounts.holding(cardId))?.amountCents ?? 0,
@@ -406,6 +425,23 @@ export class AppService {
     const card = await this.requireCard(userId);
     await this.d.ledger.confirmDeposit({ chain: "sandbox-sim", asset: "USDC", cardId: card.card_id, amountCents, txHash: newId("sim", 16), logIndex: 0 });
     void this.fundPending().catch((e) => this.log(`funding: ${errText(e)}`));
+  }
+
+  /**
+   * Sandbox only: credits a deposit by address, from an id like `sim_<address>_USDC_<amount>` (see parseSimDeposit),
+   * through the same ledger.confirmDeposit the chain watcher uses. The address must be this user's own deposit
+   * address, so one user cannot credit another's card. The id is the idempotency key.
+   */
+  async simulateChainDeposit(userId: string, id: unknown): Promise<{ amountCents: number }> {
+    if (!this.d.sandbox || !this.d.simulatedDeposits) throw new AppError(403, "simulated deposits are switched off (sandbox only, ALLOW_SIMULATED_DEPOSITS=1)");
+    const hint = typeof id === "string" ? parseSimDeposit(id) : null;
+    if (!hint) throw new AppError(400, `id must look like ${SIM_DEPOSIT_PREFIX}<0x address>_<USDC|USDT>_<amount in dollars>[_<nonce>]`);
+    if (hint.amountCents > 100_000) throw new AppError(400, "simulated deposits are capped at $1,000");
+    const card = await this.requireCard(userId);
+    if ((await this.d.addresses.cardFor(hint.address)) !== card.card_id) throw new AppError(404, "that is not one of your deposit addresses");
+    await this.d.ledger.confirmDeposit({ chain: "sandbox-sim", asset: hint.asset, cardId: card.card_id, amountCents: hint.amountCents, txHash: hint.id, logIndex: 0 });
+    void this.fundPending().catch((e) => this.log(`funding: ${errText(e)}`));
+    return { amountCents: hint.amountCents };
   }
 
   // ---------- funding: holding -> Miden card ----------

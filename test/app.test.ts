@@ -406,3 +406,19 @@ test("HTTP: Host guard, token checks, and MCP needs an agent token", { skip }, a
     real.close();
   }
 });
+
+test("sim_ chain deposit credits the caller's own deposit address once; another user's address is refused", { skip }, async () => {
+  const s = await setup();
+  await s.app.refresh(s.userId);
+  const address = (await s.app.overview(s.userId)).card!.deposit.address;
+  const id = `sim_${address}_USDC_12.34`;
+  assert.deepEqual(await s.app.simulateChainDeposit(s.userId, id), { amountCents: 1_234 });
+  await s.app.simulateChainDeposit(s.userId, id);
+  assert.equal((await s.app.overview(s.userId)).card?.deposit.address, address);
+  const rows = await s.pool.query("SELECT count(*)::int AS n FROM ledger_tx WHERE idempotency_key LIKE 'deposit:sandbox-sim:sim\\_%'");
+  assert.equal(rows.rows[0].n, 1);
+  await assert.rejects(s.app.simulateChainDeposit(s.userId, `sim_0x${"9".repeat(40)}_USDC_5`), /not one of your deposit addresses/);
+  await assert.rejects(s.app.simulateChainDeposit(s.userId, `sim_${address}_USDC_1001`), /capped/);
+  await assert.rejects(s.app.simulateChainDeposit(s.userId, "garbage"), /id must look like/);
+  await assert.rejects(s.make({ simulatedDeposits: false }).simulateChainDeposit(s.userId, id), /switched off/);
+});

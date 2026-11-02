@@ -13,7 +13,7 @@ import { MemoryCardVault, type CardDetails } from "../src/vault/vault.js";
 import { parseUsdCents, scrub, type CheckoutFiller, type FillRequest, type FillResult } from "../src/checkout-swap/filler.js";
 import { cardFree, PlaywrightFiller } from "../src/checkout-swap/playwright-filler.js";
 import { startCheckoutFixture, type CheckoutFixture } from "../src/checkout-swap/fixture.js";
-import { parseCardTime, SwapService, swapConfigFromEnv, type SwapConfig } from "../src/checkout-swap/swap.js";
+import { isStripeTestUrl, parseCardTime, SwapService, swapConfigFromEnv, type SwapConfig } from "../src/checkout-swap/swap.js";
 
 const TEST_CARD: CardDetails = { pan: "4242424242424242", cvv: "123", expMonth: 12, expYear: 2030, nameOnCard: "Ada Test", billingZip: "94000" };
 const card = (): CardDetails => ({ ...TEST_CARD });
@@ -45,8 +45,25 @@ test("swap: scrub blanks every field; cardFree strips card values from error tex
 
 test("swap: config defaults to off, Stripe only, $10 cap", () => {
   const c = swapConfigFromEnv({});
-  assert.deepEqual(c, { enabled: false, maxAmountCents: 1000, allowedHosts: ["checkout.stripe.com", "buy.stripe.com"], insecureHosts: [], fallbackEmail: undefined });
+  assert.deepEqual(c, { enabled: false, maxAmountCents: 1000, allowedHosts: ["checkout.stripe.com", "buy.stripe.com"], insecureHosts: [], fallbackEmail: undefined, stripeTestCard: false });
   assert.throws(() => swapConfigFromEnv({ SWAP_MAX_CENTS: "ten" }), /SWAP_MAX_CENTS/);
+});
+
+test("swap: only Stripe test-mode links count as test links", () => {
+  assert.equal(isStripeTestUrl("https://checkout.stripe.com/c/pay/cs_test_a1#fid"), true);
+  assert.equal(isStripeTestUrl("https://buy.stripe.com/test_abc123"), true);
+  assert.equal(isStripeTestUrl("https://checkout.stripe.com/c/pay/cs_live_a1"), false);
+  assert.equal(isStripeTestUrl("https://buy.stripe.com/abc123"), false);
+  assert.equal(isStripeTestUrl("https://buy.stripe.com/abc/test_1"), false, "test_ must start the path");
+  assert.equal(isStripeTestUrl("https://evil.example/c/pay/cs_test_a1"), false);
+  assert.equal(isStripeTestUrl("http://checkout.stripe.com/c/pay/cs_test_a1"), false);
+  assert.equal(isStripeTestUrl("https://checkout.stripe.com/c/pay/cs_live_a1?x=cs_test_"), false, "the query does not count");
+  assert.equal(isStripeTestUrl("https://checkout.stripe.com/c/pay/cs_live_a/cs_test_x"), false, "a live session id anywhere in the path is not a test link");
+  assert.equal(isStripeTestUrl("https://checkout.stripe.com/c/pay/cs_test_x/cs_live_a"), false, "a live session id last is live");
+  assert.equal(isStripeTestUrl("https://checkout.stripe.com/test_abc"), false, "test_ only counts on buy.stripe.com");
+  assert.equal(isStripeTestUrl("https://buy.stripe.com/c/pay/cs_test_a1"), false, "cs_test_ only counts on checkout.stripe.com");
+  assert.equal(isStripeTestUrl("https://checkout.stripe.com@evil.example/c/pay/cs_test_a1"), false);
+  assert.equal(swapConfigFromEnv({ SWAP_STRIPE_TEST_CARD: "1" }).stripeTestCard, true);
 });
 
 // ---------- the real browser against the local Stripe-like fixture ----------
@@ -148,11 +165,12 @@ async function setup(cfg: Partial<SwapConfig> = {}, opts: { privacy?: boolean } 
   await new PgStore(pool).migrate();
   const ledger = new Ledger(undefined, new PgStore(pool));
   const txns: Record<string, unknown>[] = [];
+  const asked: string[] = [];
   const lifecycle = {
     kycStatus: async () => ({ status: "Approved", customerId: "cust-1", kycToken: "kt" }),
     cardBalance: async () => 0,
     simulateAuthorization: async () => { throw new Error("a swap must never use the simulator"); },
-    transactions: async (cardId: string, type?: string) => txns.filter((t) => t.cardId === cardId && (!type || t.transactionType === type)),
+    transactions: async (cardId: string, type?: string) => (asked.push(cardId), txns).filter((t) => t.cardId === cardId && (!type || t.transactionType === type)),
   };
   let clock = Date.now();
   const vaultRef: { v?: MemoryCardVault } = {};
@@ -197,7 +215,7 @@ async function setup(cfg: Partial<SwapConfig> = {}, opts: { privacy?: boolean } 
     clock += ms;
     await pool.query("UPDATE app_checkout_swap SET created_at = created_at - make_interval(secs => $1), updated_at = updated_at - make_interval(secs => $1)", [ms / 1000]);
   };
-  return { app, swap, filler, vault, pool, p, balance, txns, age, oneTimeCards };
+  return { app, swap, filler, vault, pool, p, balance, txns, age, oneTimeCards, asked };
 }
 
 const URL1 = "https://checkout.stripe.com/c/pay/cs_test_a1";
@@ -218,6 +236,46 @@ test("swap: pays, debits the agent once, audits the reveal, scrubs the card", { 
   assert.deepEqual(s.vault.audit.filter((x) => x.action === "reveal").map((x) => x.purpose), [`checkout:${a.swapId}`]);
   assert.doesNotMatch(JSON.stringify(a), /4242|cvv|pan/i);
   await assert.rejects(s.swap.pay(s.p, req({ amountCents: 900 })), (e: { status?: number }) => e.status === 409, "same key, different payment");
+});
+
+test("swap, Stripe test card: a test link is paid with 4242 without opening the vault; a live link still uses the vault", { skip }, async () => {
+  const s = await setup({ stripeTestCard: true });
+  s.filler.expectPan = "4242424242424242";
+  await s.vault.discard(s.p.cardId, "test");
+  await assert.rejects(s.swap.pay(s.p, req({ checkoutUrl: "https://checkout.stripe.com/c/pay/cs_live_b2", idempotencyKey: "k0" })), /not on file/, "a live link still needs the vaulted card");
+  const a = await s.swap.pay(s.p, req());
+  assert.equal(a.status, "paid");
+  assert.equal(await s.balance(), 1_000, "the agent is still debited");
+  assert.equal(s.vault.audit.filter((x) => x.action === "reveal").length, 0, "the vault is never opened");
+  assert.equal(s.filler.calls[0]!.card.pan, "", "scrubbed after the attempt");
+  await s.age(31 * 60_000);
+  await s.swap.reconcile();
+  assert.equal((await s.swap.get(s.p, a.swapId)).underReview, null, "no card authorization is expected, so nothing goes to review");
+
+  s.filler.expectPan = TEST_CARD.pan;
+  await s.vault.put(s.p.cardId, card());
+  const live = await s.swap.pay(s.p, req({ checkoutUrl: "https://checkout.stripe.com/c/pay/cs_live_b2", amountCents: 500, idempotencyKey: "k2" }));
+  assert.equal(live.status, "paid");
+  assert.equal(s.vault.audit.filter((x) => x.action === "reveal").length, 1, "a live link gets the vaulted card");
+});
+
+test("swap, Stripe test card: an unclear page result is never matched to a real card authorization", { skip }, async () => {
+  const s = await setup({ stripeTestCard: true });
+  s.filler.expectPan = "4242424242424242";
+  s.filler.next = { outcome: "error", submitted: true, detail: "no answer after submit" };
+  const a = await s.swap.pay(s.p, req());
+  assert.equal(a.status, "processing");
+  // A real $10.00 authorization on the same card, the kind reconcile would otherwise claim.
+  s.txns.push({ cardId: s.p.cardId, transactionType: "Authorization", transactionStatus: "Approved", transactionAmount: 10, transactionReference: "real-1", authCode: "A1", transactionTime: new Date().toISOString().replace("Z", "") });
+  await s.age(61_000);
+  await s.swap.reconcile();
+  assert.equal((await s.swap.get(s.p, a.swapId)).status, "processing", "not settled by someone else's authorization");
+  await s.age(31 * 60_000);
+  await s.swap.reconcile();
+  const v = await s.swap.get(s.p, a.swapId);
+  assert.equal(v.status, "needs_review");
+  assert.equal(v.payment?.status, "processing", "the money stays held for a person");
+  assert.deepEqual(s.asked, [], "the card network is never asked about a test-card payment");
 });
 
 test("swap: refuses before reserving anything: off, over the cap, wrong host, no key, no card on file", { skip }, async () => {

@@ -32,6 +32,12 @@ export interface SwapConfig {
   insecureHosts?: string[];
   /** Receipt email typed into the page when the owner's email cannot be used. */
   fallbackEmail?: string;
+  /**
+   * Sandbox only (SWAP_STRIPE_TEST_CARD=1): a Stripe TEST-mode link (cs_test_..., buy.stripe.com/test_...) is paid with
+   * Stripe's public 4242 test card instead of the vaulted card, which a test page would refuse. The vault is not
+   * opened, and there is no card authorization to match afterwards. Live links are never affected.
+   */
+  stripeTestCard?: boolean;
 }
 
 export interface SwapDeps {
@@ -90,6 +96,35 @@ const GIVE_UP_AFTER_MS = 30 * 60_000;
 /** A card Authorization this far before the swap started cannot be its charge (clock skew allowance). */
 const MATCH_SKEW_MS = 2 * 60_000;
 
+/**
+ * A Stripe test-mode Checkout session (checkout.stripe.com, one session id, last path segment cs_test_...) or Payment Link
+ * (buy.stripe.com, first segment test_...): only Stripe's test cards can pay it, and no money moves. Checked against
+ * Stripe's own hosts, not config.allowedHosts; pay() still requires the host to be allowed as well.
+ */
+export function isStripeTestUrl(raw: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== "https:") return false;
+  const segs = u.pathname.split("/").filter(Boolean);
+  // Exactly one session id (cs_...) and it is the last segment and a test one: /cs_live_a/cs_test_x is not a test link.
+  if (u.host === "checkout.stripe.com") return segs.filter((x) => x.startsWith("cs_")).length === 1 && segs[segs.length - 1]!.startsWith("cs_test_");
+  if (u.host === "buy.stripe.com") return segs.length > 0 && segs[0]!.startsWith("test_");
+  return false;
+}
+/** Stripe's public test card (docs.stripe.com/testing). Not anyone's card. */
+const stripeTestCard = (): CardDetails => ({
+  pan: "4242424242424242", cvv: "123", expMonth: 12, expYear: new Date().getUTCFullYear() + 3, nameOnCard: "Agent Card Test", billingZip: "94107",
+  billingAddress: { line1: "510 Townsend St", city: "San Francisco", state: "CA", country: "US" },
+});
+/** card_txn_ref for a swap paid with the Stripe test card: there is no card authorization to claim. */
+const TEST_CARD_REF = "stripe-test-card:";
+/** charge_card_id of a swap paid with the Stripe test card, so reconcile never matches it to a real authorization. */
+const TEST_CARD_ID = "stripe-test-card";
+
 const newId = () => `sw_${randomBytes(12).toString("hex")}`;
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
@@ -104,6 +139,7 @@ export function swapConfigFromEnv(env: NodeJS.ProcessEnv = process.env): SwapCon
     allowedHosts: env.SWAP_ALLOWED_HOSTS ? list(env.SWAP_ALLOWED_HOSTS) : DEFAULT_SWAP_HOSTS,
     insecureHosts: list(env.SWAP_INSECURE_HOSTS),
     fallbackEmail: env.SWAP_RECEIPT_EMAIL,
+    stripeTestCard: env.SWAP_STRIPE_TEST_CARD === "1",
   };
 }
 
@@ -122,8 +158,9 @@ export class SwapService {
 
   async pay(p: AgentPrincipal, req: SwapRequest): Promise<SwapView> {
     const r = this.validate(req);
-    // Fail cleanly, before anything is reserved, when there is no card to swap in.
-    if (!(await this.d.vault.has(p.cardId))) {
+    // Fail cleanly, before anything is reserved, when there is no card to swap in. A test link in test-card mode needs none.
+    const testCard = Boolean(this.d.config.stripeTestCard) && isStripeTestUrl(r.url.href);
+    if (!testCard && !(await this.d.vault.has(p.cardId))) {
       throw new AppError(409, "this card's details are not on file, so it cannot pay hosted checkouts; the owner needs to have them captured again");
     }
     await this.insertOrBusy(p, r);
@@ -189,21 +226,34 @@ export class SwapService {
     const swapId = row.swap_id as string;
     const amountCents = Number(row.amount_cents);
     let fill: FillResult | undefined;
+    const testCard = Boolean(this.d.config.stripeTestCard) && isStripeTestUrl(row.checkout_url);
+    const outcomeOf = (f: FillResult): ChargeOutcome => {
+      if (f.outcome === "succeeded") return { kind: "approved" };
+      if (f.outcome === "declined") return { kind: "refused", reason: "card declined at the checkout" };
+      if (!f.submitted) return { kind: "refused", reason: refusedReason(f) };
+      return { kind: "unknown", reason: "the checkout gave no clear answer after the card was submitted; the money is held while we check the card" };
+    };
     const charge: Charger = (spendId) => this.serialized(async (): Promise<ChargeOutcome> => {
       await this.d.pool.query("UPDATE app_checkout_swap SET status = 'filling', spend_id = $2, updated_at = now() WHERE swap_id = $1", [swapId, spendId]);
       let card: CardDetails | null = null;
       let chargeCardId = p.cardId;
       try {
-        // As late as possible: after the debit, right before the page. In privacy mode this is where the one-time
-        // card is made, so a payment that never gets this far never costs a card.
-        chargeCardId = await this.d.app.chargeCardFor(p, spendId, amountCents, { needDetails: true });
-        if (chargeCardId !== p.cardId) {
-          await this.d.pool.query("UPDATE app_checkout_swap SET charge_card_id = $2, updated_at = now() WHERE swap_id = $1", [swapId, chargeCardId]);
-        }
-        card = await this.d.vault.reveal(chargeCardId, `checkout:${swapId}`);
-        if (!card) {
-          fill = { outcome: "error", submitted: false, detail: "card details not on file" };
-          return { kind: "refused", reason: "this card's details are not on file; nothing was charged" };
+        if (testCard) {
+          this.log(`swap ${swapId}: Stripe test-mode link, paying with Stripe's test card (the vault is not opened)`);
+          await this.d.pool.query("UPDATE app_checkout_swap SET charge_card_id = $2, updated_at = now() WHERE swap_id = $1", [swapId, TEST_CARD_ID]);
+          card = stripeTestCard();
+        } else {
+          // As late as possible: after the debit, right before the page. In privacy mode this is where the one-time
+          // card is made, so a payment that never gets this far never costs a card.
+          chargeCardId = await this.d.app.chargeCardFor(p, spendId, amountCents, { needDetails: true });
+          if (chargeCardId !== p.cardId) {
+            await this.d.pool.query("UPDATE app_checkout_swap SET charge_card_id = $2, updated_at = now() WHERE swap_id = $1", [swapId, chargeCardId]);
+          }
+          card = await this.d.vault.reveal(chargeCardId, `checkout:${swapId}`);
+          if (!card) {
+            fill = { outcome: "error", submitted: false, detail: "card details not on file" };
+            return { kind: "refused", reason: "this card's details are not on file; nothing was charged" };
+          }
         }
         fill = await this.d.filler.fill({ url: row.checkout_url, expectedAmountCents: amountCents, card, email: await this.receiptEmail(p) });
       } catch (e) {
@@ -222,10 +272,7 @@ export class SwapService {
         [swapId, fill.outcome, fill.detail ?? null, fill.submitted],
       );
       this.log(`swap ${swapId}: ${fill.outcome}${fill.submitted ? " (submitted)" : ""}`);
-      if (fill.outcome === "succeeded") return { kind: "approved" };
-      if (fill.outcome === "declined") return { kind: "refused", reason: "card declined at the checkout" };
-      if (!fill.submitted) return { kind: "refused", reason: refusedReason(fill) };
-      return { kind: "unknown", reason: "the checkout gave no clear answer after the card was submitted; the money is held while we check the card" };
+      return outcomeOf(fill);
     });
 
     let spend: SpendView;
@@ -243,8 +290,9 @@ export class SwapService {
       : "failed";
     const detail = fill ? undefined : spend.reason ?? undefined;
     const updated = (await this.d.pool.query(
-      "UPDATE app_checkout_swap SET status = $2, spend_id = $3, detail = COALESCE($4, detail), updated_at = now() WHERE swap_id = $1 RETURNING *",
-      [swapId, status, spend.spendId, detail ?? null],
+      `UPDATE app_checkout_swap SET status = $2, spend_id = $3, detail = COALESCE($4, detail),
+         card_txn_ref = CASE WHEN $5::boolean AND $2 = 'paid' THEN $6 ELSE card_txn_ref END, updated_at = now() WHERE swap_id = $1 RETURNING *`,
+      [swapId, status, spend.spendId, detail ?? null, testCard, `${TEST_CARD_REF}${swapId}`],
     )).rows[0];
     return this.view(updated);
   }
@@ -296,6 +344,8 @@ export class SwapService {
 
   /** Unclaimed Authorizations on the swap's card that could be its charge: same amount, not before it started. */
   private async candidates(s: Record<string, any>, lists: Map<string, Promise<CardTransaction[]>>): Promise<CardTransaction[]> {
+    // Paid with Stripe's test card: no card was charged, so no real authorization may ever be claimed for it.
+    if (s.charge_card_id === TEST_CARD_ID) return [];
     const onCard = (s.charge_card_id ?? s.card_id) as string;
     if (!lists.has(onCard)) lists.set(onCard, this.d.lifecycle.transactions(onCard, "Authorization", 100));
     const claimed = new Set((await this.d.pool.query("SELECT card_txn_ref FROM app_checkout_swap WHERE card_id = $1 AND card_txn_ref IS NOT NULL", [s.card_id])).rows.map((r) => r.card_txn_ref));

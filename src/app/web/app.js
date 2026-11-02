@@ -8,7 +8,7 @@ const TOKEN_KEY = "agentCardsUserToken";
 const TIERS = { quick: "Starter limits", full: "Full limits" };
 const CHAINS = { "base-sepolia": "Base Sepolia", "ethereum-sepolia": "Ethereum Sepolia", base: "Base", "sandbox-sim": "Sandbox" };
 const EXPLORERS = { "base-sepolia": "https://sepolia.basescan.org/tx/", "ethereum-sepolia": "https://sepolia.etherscan.io/tx/" };
-const chainName = (c) => CHAINS[c] ?? String(c ?? "").split("-").map(cap).join(" ");
+const chainName = (c) => CHAINS[String(c ?? "").replace(/^circle-/, "")] ?? CHAINS[c] ?? String(c ?? "").split("-").map(cap).join(" ");
 const FIELDS = { firstName: "first name", lastName: "last name", dateOfBirth: "date of birth", idType: "ID type", idNumber: "ID number", idFrontImage: "ID photo", address1: "address", zipcode: "postcode",
   amountCents: "amount", perTransactionCents: "per-payment limit", dailyCents: "daily limit", allowedMccs: "MCCs", mcc: "MCC", idempotencyKey: "idempotency key" };
 const VIEWS = ["overview", "fund", "agents", "developers"];
@@ -338,10 +338,14 @@ function updateFund() {
     };
   }
   const dep = c.deposit.address;
-  setHTML($("#fundIntro"), `<div class="chips"><span class="badge accent">USDC · ${esc(chainName(c.deposit.chain))}</span><span class="badge">Ethereum Sepolia</span><span class="badge warn">Testnet</span></div>Credited after 5 blocks (about 10 s on Base, 1 min on Ethereum), then moved onto the card. Minimum card top-up $1.00.`);
+  const nets = c.deposit.networks ?? [c.deposit.chain];
+  const netNames = nets.map(chainName);
+  const timing = c.deposit.rail === "circle" ? "Credited once the network confirms it (about 5 minutes on a testnet)" : "Credited after 5 blocks (about 10 s on Base, 1 min on Ethereum)";
+  setHTML($("#fundIntro"), `<div class="chips">${netNames.map((n, i) => `<span class="badge ${i ? "" : "accent"}">USDC · ${esc(n)}</span>`).join("")}<span class="badge warn">Testnet</span></div>
+    <p style="margin:0 0 8px"><strong>Send only USDC on ${esc(netNames.join(" or "))}.</strong> Tokens or networks other than these will not be credited and cannot be recovered.</p>${esc(timing)}, then moved onto the card. Minimum card top-up $1.00.`);
   setHTML($("#depAddr"), dep ? `<div class="addr"><span class="mono">${esc(dep)}</span><button type="button" class="sm" data-copy="${esc(dep)}">Copy</button></div>` : `<p class="muted">Creating your address…</p>`);
   setHTML($("#depTables"), `
-    ${c.deposits.length ? `<div class="card"><h2>Deposits</h2><div class="scroll"><table><thead><tr><th>When</th><th>Network</th><th>Reference</th><th class="num">Amount</th></tr></thead><tbody>${c.deposits.map((d) => `<tr><td>${when(d.at)}</td><td>${d.simulated ? '<span class="badge">Simulated</span>' : esc(chainName(d.chain))}</td><td class="mono">${d.simulated ? "–" : `<a href="${esc(EXPLORERS[d.chain] ?? EXPLORERS["base-sepolia"])}${esc(d.reference)}" target="_blank" rel="noopener">${esc(d.reference.slice(0, 14))}…</a>`}</td><td class="num">${usd(d.amountCents)}</td></tr>`).join("")}</tbody></table></div></div>` : ""}
+    ${c.deposits.length ? `<div class="card"><h2>Deposits</h2><div class="scroll"><table><thead><tr><th>When</th><th>Network</th><th>Reference</th><th class="num">Amount</th></tr></thead><tbody>${c.deposits.map((d) => `<tr><td>${when(d.at)}</td><td>${d.simulated ? '<span class="badge">Simulated</span>' : esc(chainName(d.chain))}</td><td class="mono">${d.simulated ? "–" : `<a href="${esc(EXPLORERS[String(d.chain).replace(/^circle-/, "")] ?? EXPLORERS["base-sepolia"])}${esc(d.reference)}" target="_blank" rel="noopener">${esc(d.reference.slice(0, 14))}…</a>`}</td><td class="num">${usd(d.amountCents)}</td></tr>`).join("")}</tbody></table></div></div>` : ""}
     ${c.fundings.length ? `<div class="card"><h2>Card top-ups</h2><div class="scroll"><table><thead><tr><th>When</th><th>Status</th><th>Detail</th><th class="num">Amount</th></tr></thead><tbody>${c.fundings.map((f) => `<tr><td>${when(f.at)}</td><td><span class="badge ${f.status === "completed" ? "ok" : f.status === "released" ? "bad" : "warn"}">${esc(f.status)}</span></td><td class="muted wrap">${esc(f.detail ?? "")}</td><td class="num">${usd(f.amountCents)}</td></tr>`).join("")}</tbody></table></div></div>` : ""}`);
 }
 

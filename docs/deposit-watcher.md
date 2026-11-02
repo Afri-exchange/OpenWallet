@@ -1,5 +1,7 @@
 # Base USDC deposit watcher
 
+An alternative rail that needs no polling (Circle wallets plus webhooks) is in [circle-deposits.md](circle-deposits.md).
+
 Code: `src/chain/base-usdc-watcher.ts` (watcher), `src/chain/pg.ts` (Postgres cursor and address book), `src/ledger/units.ts` (unit conversion), migration `src/ledger/migrations/002_chain.sql`. Wired up in `src/app/main.ts`. Status as of 2026-10-19: the watcher is unit-tested and was checked read-only against Base mainnet (three public RPCs; credited cents matched an independent sum of that block's transfers). The Postgres classes typecheck and have tests (`test/chain-pg.test.ts`, run only when `DATABASE_URL` is set); README item 4 records that they had not yet been run against Postgres. The sandbox service is configured to use them on **Base Sepolia**; I have not confirmed a real Sepolia deposit end to end.
 
 ## Second network: Ethereum Sepolia
@@ -93,7 +95,7 @@ Note what this does and does not mean: the *stablecoin* is credited in our ledge
 
 - Watch the log for `chain watcher: <error>` (deduplicated) and `dust …`.
 - Lag: compare `chain_cursor.block` to the chain head; healthy lag is about `confirmations` blocks plus one poll interval.
-- To test without chain access: `POST /api/me/simulate-deposit` credits through the same `ledger.confirmDeposit` with chain label `sandbox-sim`; the overview marks those `simulated: true`. For a real one, send Circle test USDC on Base Sepolia to the address on the dashboard and expect the credit roughly 10 to 20 s later (5 confirmations at about 2 s per block, plus the poll interval; an estimate, not measured).
+- To test without chain access: `POST /api/me/simulate-chain-deposit` with `sim_<your deposit address>_USDC_<dollars>` credits by address (modelled on the Utila `sim_` transaction ids in afriex-server), and `POST /api/me/simulate-deposit` credits through the same `ledger.confirmDeposit` with chain label `sandbox-sim`; the overview marks those `simulated: true`. For a real one, send Circle test USDC on Base Sepolia to the address on the dashboard and expect the credit roughly 10 to 20 s later (5 confirmations at about 2 s per block, plus the poll interval; an estimate, not measured).
 
 ## OPEN items (as of today)
 

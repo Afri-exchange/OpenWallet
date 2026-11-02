@@ -1,0 +1,364 @@
+{
+  "name": "Agent Card: agent pays a Stripe checkout link",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "c1000000-0000-4000-8000-000000000001",
+      "name": "Run it",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "2-0",
+              "name": "baseUrl",
+              "value": "http://127.0.0.1:8787",
+              "type": "string"
+            },
+            {
+              "id": "2-1",
+              "name": "checkoutUrl",
+              "value": "PASTE A https://checkout.stripe.com/c/pay/cs_... OR https://buy.stripe.com/... LINK",
+              "type": "string"
+            },
+            {
+              "id": "2-2",
+              "name": "amountUsd",
+              "value": 1,
+              "type": "number"
+            },
+            {
+              "id": "2-3",
+              "name": "merchant",
+              "value": "Stripe test shop",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c1000000-0000-4000-8000-000000000002",
+      "name": "Stripe link",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "endpointUrl": "={{ $('Stripe link').item.json.baseUrl }}/mcp",
+        "authentication": "headerAuth",
+        "tool": {
+          "__rl": true,
+          "mode": "id",
+          "value": "get_wallet"
+        },
+        "inputMode": "json",
+        "jsonInput": "{}",
+        "options": {}
+      },
+      "id": "c1000000-0000-4000-8000-000000000003",
+      "name": "Agent (MCP): get_wallet",
+      "type": "@n8n/n8n-nodes-langchain.mcpClient",
+      "typeVersion": 1.1,
+      "position": [
+        440,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "agentCardsAgent0001",
+          "name": "Agent Cards agent (ak_)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "endpointUrl": "={{ $('Stripe link').item.json.baseUrl }}/mcp",
+        "authentication": "headerAuth",
+        "tool": {
+          "__rl": true,
+          "mode": "id",
+          "value": "pay_hosted_checkout"
+        },
+        "inputMode": "json",
+        "jsonInput": "={{ JSON.stringify({ checkout_url: $('Stripe link').item.json.checkoutUrl, amount_usd: $('Stripe link').item.json.amountUsd, merchant: $('Stripe link').item.json.merchant, idempotency_key: 'n8n-' + $('Stripe link').item.json.checkoutUrl.split('#')[0].split('/').pop().slice(0, 90) }) }}",
+        "options": {}
+      },
+      "id": "c1000000-0000-4000-8000-000000000004",
+      "name": "Agent (MCP): pay_hosted_checkout",
+      "type": "@n8n/n8n-nodes-langchain.mcpClient",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "agentCardsAgent0001",
+          "name": "Agent Cards agent (ak_)"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all().map((item) => {\n  const j = item.json;\n  if (j.error) return { json: { payment: { status: \"error\", error: j.error.message ?? String(j.error) } } };\n  const t = j.content?.[0]?.text ?? \"\";\n  if (typeof t === \"object\") return { json: { payment: t } };\n  try { return { json: { payment: JSON.parse(t) } }; } catch { return { json: { payment: { status: \"error\", error: t } } }; }\n});"
+      },
+      "id": "c1000000-0000-4000-8000-000000000005",
+      "name": "Read answer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "p1",
+              "leftValue": "={{ ['pending', 'filling', 'processing'].includes($json.payment.status) && $runIndex < 16 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c1000000-0000-4000-8000-000000000006",
+      "name": "Still processing?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 15
+      },
+      "id": "c1000000-0000-4000-8000-000000000007",
+      "name": "Wait 15s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1320,
+        160
+      ],
+      "webhookId": "c1000000-0000-4000-8000-000000000070"
+    },
+    {
+      "parameters": {
+        "endpointUrl": "={{ $('Stripe link').item.json.baseUrl }}/mcp",
+        "authentication": "headerAuth",
+        "tool": {
+          "__rl": true,
+          "mode": "id",
+          "value": "get_hosted_checkout_payment"
+        },
+        "inputMode": "json",
+        "jsonInput": "={{ JSON.stringify({ swap_id: $('Read answer').item.json.payment.swapId }) }}",
+        "options": {}
+      },
+      "id": "c1000000-0000-4000-8000-000000000008",
+      "name": "Agent (MCP): get_hosted_checkout_payment",
+      "type": "@n8n/n8n-nodes-langchain.mcpClient",
+      "typeVersion": 1.1,
+      "position": [
+        1540,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "agentCardsAgent0001",
+          "name": "Agent Cards agent (ak_)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9-0",
+              "name": "result",
+              "value": "={{ $json.payment.status === 'paid' ? 'PAID' : $json.payment.error ? 'ERROR: ' + $json.payment.error : 'NOT PAID (' + $json.payment.status + ')' }}",
+              "type": "string"
+            },
+            {
+              "id": "9-1",
+              "name": "swapId",
+              "value": "={{ $json.payment.swapId }}",
+              "type": "string"
+            },
+            {
+              "id": "9-2",
+              "name": "amountCents",
+              "value": "={{ $json.payment.amountCents }}",
+              "type": "number"
+            },
+            {
+              "id": "9-3",
+              "name": "checkoutHost",
+              "value": "={{ $json.payment.checkoutHost }}",
+              "type": "string"
+            },
+            {
+              "id": "9-4",
+              "name": "pageOutcome",
+              "value": "={{ $json.payment.outcome }}",
+              "type": "string"
+            },
+            {
+              "id": "9-5",
+              "name": "detail",
+              "value": "={{ $json.payment.detail ?? $json.payment.error }}",
+              "type": "string"
+            },
+            {
+              "id": "9-6",
+              "name": "paymentStatus",
+              "value": "={{ $json.payment.payment?.status }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c1000000-0000-4000-8000-000000000009",
+      "name": "Result",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1320,
+        440
+      ]
+    }
+  ],
+  "connections": {
+    "Run it": {
+      "main": [
+        [
+          {
+            "node": "Stripe link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stripe link": {
+      "main": [
+        [
+          {
+            "node": "Agent (MCP): get_wallet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent (MCP): get_wallet": {
+      "main": [
+        [
+          {
+            "node": "Agent (MCP): pay_hosted_checkout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent (MCP): pay_hosted_checkout": {
+      "main": [
+        [
+          {
+            "node": "Read answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read answer": {
+      "main": [
+        [
+          {
+            "node": "Still processing?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Still processing?": {
+      "main": [
+        [
+          {
+            "node": "Wait 15s",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 15s": {
+      "main": [
+        [
+          {
+            "node": "Agent (MCP): get_hosted_checkout_payment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent (MCP): get_hosted_checkout_payment": {
+      "main": [
+        [
+          {
+            "node": "Read answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "active": false,
+  "id": "agentCardsStripe01"
+}
