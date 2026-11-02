@@ -52,6 +52,7 @@ On boot `main.ts` also: restores agent state from Postgres (`AppService.restore(
 | `POST /api/me/kyc` | `uk_` | Submit individual Card KYC. |
 | `POST /api/me/refresh` | `uk_` | Re-check KYC, issue the card if approved. |
 | `POST /api/me/simulate-deposit` | `uk_` | Sandbox only: credit a fake deposit, `{ amountCents }`, max $1,000. |
+| `POST /api/me/simulate-chain-deposit` | `uk_` | Sandbox only: credit a fake chain deposit by address, `{ id: "sim_<your 0x deposit address>_USDC_<dollars>[_<nonce>]" }`, max $1,000. The id is the idempotency key; add a nonce to repeat the same amount. |
 | `POST /api/me/agents` | `uk_` | Create an agent. Returns the `ak_` token once. |
 | `POST /api/me/agents/{id}/fund` \| `reclaim` \| `revoke` \| `limits` | `uk_` | Manage an agent. |
 | `GET /agent/v1/wallet`, `GET /agent/v1/transactions`, `POST /agent/v1/pay` | `ak_` | Agent REST API. |

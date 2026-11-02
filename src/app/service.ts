@@ -9,6 +9,7 @@ import { capPolicy, type Tier, type TierLimits } from "../cards/tiers.js";
 import { MidenDuplicateReferenceError, referenceFor } from "../funding/miden-wallet.js";
 import type { FundingSource } from "../funding/types.js";
 import { accounts, LedgerError, type Ledger, type LedgerTransaction } from "../ledger/ledger.js";
+import { parseSimDeposit, SIM_DEPOSIT_PREFIX } from "../chain/sim-deposit.js";
 import { MidenApiError, type MidenClient } from "../miden/client.js";
 import type { IndividualKyc } from "../users/onboarding.js";
 
@@ -424,6 +425,23 @@ export class AppService {
     const card = await this.requireCard(userId);
     await this.d.ledger.confirmDeposit({ chain: "sandbox-sim", asset: "USDC", cardId: card.card_id, amountCents, txHash: newId("sim", 16), logIndex: 0 });
     void this.fundPending().catch((e) => this.log(`funding: ${errText(e)}`));
+  }
+
+  /**
+   * Sandbox only: credits a deposit by address, from an id like `sim_<address>_USDC_<amount>` (see parseSimDeposit),
+   * through the same ledger.confirmDeposit the chain watcher uses. The address must be this user's own deposit
+   * address, so one user cannot credit another's card. The id is the idempotency key.
+   */
+  async simulateChainDeposit(userId: string, id: unknown): Promise<{ amountCents: number }> {
+    if (!this.d.sandbox || !this.d.simulatedDeposits) throw new AppError(403, "simulated deposits are switched off (sandbox only, ALLOW_SIMULATED_DEPOSITS=1)");
+    const hint = typeof id === "string" ? parseSimDeposit(id) : null;
+    if (!hint) throw new AppError(400, `id must look like ${SIM_DEPOSIT_PREFIX}<0x address>_<USDC|USDT>_<amount in dollars>[_<nonce>]`);
+    if (hint.amountCents > 100_000) throw new AppError(400, "simulated deposits are capped at $1,000");
+    const card = await this.requireCard(userId);
+    if ((await this.d.addresses.cardFor(hint.address)) !== card.card_id) throw new AppError(404, "that is not one of your deposit addresses");
+    await this.d.ledger.confirmDeposit({ chain: "sandbox-sim", asset: hint.asset, cardId: card.card_id, amountCents: hint.amountCents, txHash: hint.id, logIndex: 0 });
+    void this.fundPending().catch((e) => this.log(`funding: ${errText(e)}`));
+    return { amountCents: hint.amountCents };
   }
 
   // ---------- funding: holding -> Miden card ----------

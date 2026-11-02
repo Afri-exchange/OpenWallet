@@ -148,11 +148,13 @@ for (const n of circle && env.CHAIN_WATCHER !== "1" ? [] : networks) {
 
 // Checkout swap: agents pay third-party hosted checkouts (Stripe) with the vaulted card. Off unless SWAP_ENABLED=1.
 const swapConfig = swapConfigFromEnv();
+if (swapConfig.stripeTestCard && !sandbox) throw new Error("SWAP_STRIPE_TEST_CARD=1 is only allowed with the Miden sandbox");
 if (swapConfig.enabled && !vault) throw new Error("SWAP_ENABLED=1 needs CARD_VAULT_KEY");
 const swap = swapConfig.enabled && vault
   ? new SwapService({ pool, app, vault, filler: new RoutingFiller(), lifecycle, config: swapConfig, log })
   : undefined;
 if (swap) log(`checkout swap on: hosts ${swapConfig.allowedHosts.join(", ")}, cap $${(swapConfig.maxAmountCents / 100).toFixed(2)}`);
+if (swap && swapConfig.stripeTestCard) log("checkout swap: SWAP_STRIPE_TEST_CARD=1, Stripe TEST-mode links are paid with Stripe's 4242 test card (sandbox only)");
 
 const payouts = new PayoutSender({ pool, ledger, checkout, rail: new UsdcPayoutRail({ rpc, account: payoutAccount, confirmations: 5 }), log });
 log(`payout account (Base Sepolia, fund with test USDC + ETH): ${payoutAccount.address}`);

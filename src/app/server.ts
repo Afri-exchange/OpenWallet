@@ -351,6 +351,9 @@ export function createAppServer(app: AppService, opts: { allowedHosts: string[];
         await app.simulateDeposit(userId, (await readJson(req)).amountCents);
         return send(res, 202, { ok: true });
       }
+      if (m === "POST" && path === "/api/me/simulate-chain-deposit") {
+        return send(res, 202, { ok: true, ...(await app.simulateChainDeposit(userId, (await readJson(req)).id)) });
+      }
       if (m === "POST" && path === "/api/me/agents") return send(res, 201, await app.createAgent(userId, await readJson(req)));
       const am = /^\/api\/me\/agents\/([A-Za-z0-9_]+)\/(fund|reclaim|revoke|limits)$/.exec(path);
       if (m === "POST" && am) {

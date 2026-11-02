@@ -42,6 +42,7 @@ Rules kept from the device side: a challenge is its own failure state; the revea
 | `SWAP_ALLOWED_HOSTS` | `checkout.stripe.com,buy.stripe.com` | exact https hosts |
 | `SWAP_INSECURE_HOSTS` | none | http hosts, for the local fixture only |
 | `SWAP_RECEIPT_EMAIL` | owner's email | fallback receipt email |
+| `SWAP_STRIPE_TEST_CARD` | off | sandbox only: `1` pays Stripe **test-mode** links (`cs_test_...`, `buy.stripe.com/test_...`) with Stripe's 4242 test card instead of the vault. The vault is not opened, no card authorization is expected afterwards, and live links are unaffected. Refused at startup off the Miden sandbox. The agent's balance is still debited in our ledger although no card is charged, so in this mode a ledger debit is not proof of a card spend. A swap left unclear is never matched to a card authorization; after 30 minutes it goes to a person. Used by `examples/n8n/agent-pays-stripe-link.workflow.json`. |
 
 Agent surfaces: MCP `pay_hosted_checkout` / `get_hosted_checkout_payment`; REST `POST /agent/v1/hosted-checkouts/pay`, `GET /agent/v1/hosted-checkouts[/sw_...]`.
 
