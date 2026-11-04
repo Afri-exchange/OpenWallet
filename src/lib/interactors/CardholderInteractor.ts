@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type pg from "pg";
 import type { AgentWallets } from "../services/AgentWallets.js";
-import type { PgDepositAddresses } from "../../db/repositories/PgChainRepositories.js";
+import type { DepositAddressRepository } from "../../domain/repositories/DepositAddressRepository.js";
 import { MidenBusinessError, type CardLifecycle, type CardTransaction } from "../../adapters/virtualCards/CardLifecycle.js";
 import { evaluate, type SpendPolicy } from "../services/spendPolicy.js";
 import type { CardService } from "../../adapters/virtualCards/CardService.js";
@@ -22,7 +22,7 @@ export interface CardholderContext {
   cards: Pick<CardService, "issue" | "issueOneTime">;
   funding: FundingSource;
   wallets: AgentWallets;
-  addresses: PgDepositAddresses;
+  addresses: DepositAddressRepository;
   /**
    * The deposit-address provider: the address for a unique index. Our HD wallet today (sync); a custody
    * provider such as Utila would call its API here (hence async), keyed by the same index.

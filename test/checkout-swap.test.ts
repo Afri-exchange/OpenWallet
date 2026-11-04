@@ -3,10 +3,12 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import pg from "pg";
 import { AgentWallets } from "../src/lib/services/AgentWallets.js";
-import { PgDepositAddresses } from "../src/db/repositories/PgChainRepositories.js";
+import { createDepositAddressRepository } from "../src/db/repositories/createChainRepositories.js";
 import { DEFAULT_TIERS } from "../src/lib/services/tiers.js";
 import { Ledger, accounts } from "../src/lib/services/Ledger.js";
-import { PgLedgerStore } from "../src/db/repositories/PgLedgerStore.js";
+import { createDatabase } from "../src/db/client.js";
+import { migrate } from "../src/db/migrate.js";
+import { createRepositories } from "../src/db/repositories/createRepositories.js";
 import { MidenApiError } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
 import { CardholderInteractor, type CardholderContext } from "../src/lib/interactors/CardholderInteractor.js";
 import { MemoryCardVault, type CardDetails } from "../src/adapters/cardVault/CardVault.js";
@@ -163,8 +165,10 @@ async function setup(cfg: Partial<SwapConfig> = {}, opts: { privacy?: boolean } 
   schemas.push(schema);
   const pool = new pg.Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 6 });
   pools.push(pool);
-  await new PgLedgerStore(pool).migrate();
-  const ledger = new Ledger(undefined, new PgLedgerStore(pool));
+  await migrate(pool);
+  const db = createDatabase(pool);
+  const repos = createRepositories(db);
+  const ledger = new Ledger(undefined, repos.ledger);
   const txns: Record<string, unknown>[] = [];
   const asked: string[] = [];
   const lifecycle = {
@@ -177,7 +181,7 @@ async function setup(cfg: Partial<SwapConfig> = {}, opts: { privacy?: boolean } 
   const vaultRef: { v?: MemoryCardVault } = {};
   const oneTimeCards: string[] = [];
   const app = new CardholderInteractor({
-    pool, ledger, wallets: new AgentWallets(ledger), addresses: new PgDepositAddresses(pool, "base-sepolia"),
+    pool, ledger, wallets: new AgentWallets(ledger), addresses: createDepositAddressRepository(db, "base-sepolia"),
     deriveAddress: (i: number) => `0x${i.toString(16).padStart(40, "0")}`, tiers: DEFAULT_TIERS, chain: "base-sepolia", sandbox: true, simulatedDeposits: true,
     miden: { request: async () => ({ isSuccessful: true, responseCode: "00", kycStatus: "Initiated" }) },
     lifecycle,

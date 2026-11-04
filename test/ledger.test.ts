@@ -3,12 +3,15 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import pg from "pg";
 import { Ledger, LedgerError, accounts } from "../src/lib/services/Ledger.js";
-import { PgLedgerStore } from "../src/db/repositories/PgLedgerStore.js";
+import { createDatabase } from "../src/db/client.js";
+import { migrate } from "../src/db/migrate.js";
+import { createLedgerStore } from "../src/db/repositories/createLedgerStore.js";
+import type { LedgerRepository } from "../src/domain/repositories/LedgerStore.js";
 
 const dep = { chain: "evm-1", asset: "USDC", cardId: "c1", amountCents: 10_000, txHash: "0xabc", logIndex: 0 };
 
 /** Each case builds a fresh ledger. The Postgres variant gets its own schema so cases never share rows. */
-interface Backend { name: string; make: () => Promise<{ ledger: Ledger; store?: PgLedgerStore }> }
+interface Backend { name: string; make: () => Promise<{ ledger: Ledger; store?: LedgerRepository; pool?: pg.Pool }> }
 
 const backends: Backend[] = [{ name: "memory", make: async () => ({ ledger: new Ledger() }) }];
 
@@ -23,9 +26,10 @@ if (databaseUrl) {
       const schema = `t_${randomBytes(6).toString("hex")}`;
       await admin!.query(`CREATE SCHEMA ${schema}`);
       schemas.push(schema);
-      const store = new PgLedgerStore(new pg.Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 10 }));
-      await store.migrate();
-      return { ledger: new Ledger(undefined, store), store };
+      const pool = new pg.Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 10 });
+      await migrate(pool);
+      const store = createLedgerStore(createDatabase(pool));
+      return { ledger: new Ledger(undefined, store), store, pool };
     },
   });
 }
@@ -36,15 +40,15 @@ after(async () => {
 });
 
 for (const backend of backends) {
-  const t = (name: string, fn: (l: Ledger, store?: PgLedgerStore) => Promise<void>) =>
+  const t = (name: string, fn: (l: Ledger, store?: LedgerRepository) => Promise<void>) =>
     test(`[${backend.name}] ${name}`, async () => {
-      const { ledger, store } = await backend.make();
+      const { ledger, store, pool } = await backend.make();
       try {
         await fn(ledger, store);
         const bad = await store?.checkIntegrity();
         if (bad) assert.deepEqual(bad, [], "stored balances must equal the sum of postings");
       } finally {
-        await store?.close();
+        await pool?.end();
       }
     });
 
@@ -297,14 +301,15 @@ if (databaseUrl) {
     const schema = `t_${randomBytes(6).toString("hex")}`;
     await admin!.query(`CREATE SCHEMA ${schema}`);
     schemas.push(schema);
-    const open = () => new PgLedgerStore(new pg.Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 2 }));
-    const s1 = open();
-    await s1.migrate();
-    await new Ledger(undefined, s1).confirmDeposit(dep);
-    await s1.close();
+    const open = () => new pg.Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 2 });
+    const p1 = open();
+    await migrate(p1);
+    await new Ledger(undefined, createLedgerStore(createDatabase(p1))).confirmDeposit(dep);
+    await p1.end();
 
-    const s2 = open();
-    await s2.migrate(); // idempotent
+    const p2 = open();
+    await migrate(p2); // idempotent
+    const s2 = createLedgerStore(createDatabase(p2));
     const l2 = new Ledger(undefined, s2);
     assert.equal(await l2.balance(accounts.holding("c1")), 10_000);
     assert.equal((await l2.confirmDeposit(dep)).seq, 1);
@@ -318,6 +323,6 @@ if (databaseUrl) {
     await raw.query("UPDATE ledger_balance SET balance_cents = balance_cents + 1 WHERE account = 'external:USDC'");
     assert.equal((await s2.checkIntegrity()).length > 0, true, "integrity probe must notice a drifted balance");
     await raw.end();
-    await s2.close();
+    await p2.end();
   });
 }

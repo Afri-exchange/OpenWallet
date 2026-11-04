@@ -1,11 +1,13 @@
 import type pg from "pg";
+import type { Database } from "../../db/client.js";
+import type { Repositories } from "../../db/repositories/createRepositories.js";
+import type { DepositAddressRepository } from "../repositories/DepositAddressRepository.js";
 import type { CardVault } from "../../adapters/cardVault/CardVault.js";
 import type { CheckoutFiller } from "../../adapters/checkoutFillers/CheckoutFiller.js";
 import type { CircleDeposits } from "../../adapters/deposits/CircleDeposits.js";
 import type { CursorStore, Rpc } from "../../adapters/deposits/BaseUsdcWatcher.js";
 import type { CardLifecycle } from "../../adapters/virtualCards/CardLifecycle.js";
 import type { CardService } from "../../adapters/virtualCards/CardService.js";
-import type { PgDepositAddresses } from "../../db/repositories/PgChainRepositories.js";
 import type { MidenClient } from "../../lib/clients/cardIssuing/miden/MidenClient.js";
 import type { PayoutRail } from "../../lib/interactors/PayoutInteractor.js";
 import type { SwapConfig } from "../../lib/interactors/SwapInteractor.js";
@@ -31,9 +33,13 @@ export interface WatchedNetwork {
  */
 export interface AppParams {
   // ----- data -----
+  /** The connection pool; only main.ts uses it, to close it on shutdown. */
   pool: pg.Pool;
+  /** Drizzle handle over the pool. Interactors get repositories, not this (except for advisory locks). */
+  db: Database;
+  repos: Repositories;
   ledger: Ledger;
-  addresses: PgDepositAddresses;
+  addresses: DepositAddressRepository;
 
   // ----- card issuing (Miden) -----
   miden: MidenClient;

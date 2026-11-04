@@ -12,12 +12,14 @@
 //
 // This does not go through the agent service (no agent, no ledger): it proves the card + vault + page fill + Miden
 // reconcile chain end to end with the smallest moving parts.
+import { createDatabase } from "../src/db/client.js";
+import { createCardVaultRepository } from "../src/db/repositories/createCardVaultRepository.js";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import pg from "pg";
 import { CardLifecycle, type CardTransaction } from "../src/adapters/virtualCards/CardLifecycle.js";
 import { MidenClient } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
-import { PgCardVault, vaultKeyFromEnv, type CardDetails } from "../src/adapters/cardVault/CardVault.js";
+import { SealedCardVault, vaultKeyFromEnv, type CardDetails } from "../src/adapters/cardVault/CardVault.js";
 import { PlaywrightFiller } from "../src/adapters/checkoutFillers/PlaywrightFiller.js";
 import { scrub, type FillResult } from "../src/adapters/checkoutFillers/CheckoutFiller.js";
 import { DEFAULT_SWAP_HOSTS, parseCardTime } from "../src/lib/interactors/SwapInteractor.js";
@@ -80,7 +82,7 @@ const journal: { url: string; runId: string; stage: string }[] = existsSync(JOUR
 check("no earlier run on this URL in .live-test/journal.jsonl", !journal.some((j) => j.url === url), "a second payment needs a new link or a manual journal edit");
 
 const pool = env.DATABASE_URL ? new pg.Pool({ connectionString: env.DATABASE_URL, max: 2 }) : undefined;
-const vault = pool && key ? new PgCardVault(pool, key) : undefined;
+const vault = pool && key ? new SealedCardVault(createCardVaultRepository(createDatabase(pool)), key) : undefined;
 const lifecycle = baseOk && env.MIDEN_LIVE_CLIENT_ID && env.MIDEN_LIVE_CLIENT_SECRET && env.MIDEN_LIVE_UNIQUE_KEY
   ? new CardLifecycle(new MidenClient({
     baseUrl: env.MIDEN_BASE_URL!, tokenUrl: env.MIDEN_TOKEN_URL!, clientId: env.MIDEN_LIVE_CLIENT_ID, clientSecret: env.MIDEN_LIVE_CLIENT_SECRET, uniqueKey: env.MIDEN_LIVE_UNIQUE_KEY,

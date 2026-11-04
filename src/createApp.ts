@@ -42,6 +42,6 @@ export function createApp(p: AppParams): AgentCardsApp & Required<Pick<AgentCard
   const swaps = p.swapConfig.enabled && p.vault
     ? new SwapInteractor({ pool: p.pool, app: cardholders, vault: p.vault, filler: p.checkoutFiller, lifecycle: p.lifecycle, config: p.swapConfig, log: p.log })
     : undefined;
-  const payouts = new PayoutInteractor({ pool: p.pool, ledger: p.ledger, checkout: checkouts, rail: p.payoutRail, log: p.log });
+  const payouts = new PayoutInteractor({ db: p.db, payouts: p.repos.payouts, ledger: p.ledger, checkout: checkouts, rail: p.payoutRail, log: p.log });
   return { cardholders, checkouts, swaps, developers, payouts, circleDeposits: p.circleDeposits, log: p.log };
 }

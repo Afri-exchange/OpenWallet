@@ -1,7 +1,7 @@
 // Composition root, part 1 (the Afriex `bootstrap.ts`): reads the environment once and builds every client,
 // repository and adapter into AppParams. Nothing below this file reads process.env.
 import pg from "pg";
-import { PgCardVault, vaultKeyFromEnv } from "./adapters/cardVault/CardVault.js";
+import { SealedCardVault, vaultKeyFromEnv } from "./adapters/cardVault/CardVault.js";
 import { RoutingFiller } from "./adapters/checkoutFillers/RoutingFiller.js";
 import { BASE_SEPOLIA_USDC, ETHEREUM_SEPOLIA_USDC, jsonRpc } from "./adapters/deposits/BaseUsdcWatcher.js";
 import { CircleDeposits } from "./adapters/deposits/CircleDeposits.js";
@@ -10,8 +10,10 @@ import { UsdcPayoutRail } from "./adapters/payouts/UsdcPayoutRail.js";
 import { CardLifecycle } from "./adapters/virtualCards/CardLifecycle.js";
 import { CardService } from "./adapters/virtualCards/CardService.js";
 import { HdDepositWallet } from "./adapters/wallet/HdDepositWallet.js";
-import { PgCursor, PgDepositAddresses } from "./db/repositories/PgChainRepositories.js";
-import { PgLedgerStore } from "./db/repositories/PgLedgerStore.js";
+import { createDatabase } from "./db/client.js";
+import { migrate } from "./db/migrate.js";
+import { createCursorStore, createDepositAddressRepository } from "./db/repositories/createChainRepositories.js";
+import { createRepositories } from "./db/repositories/createRepositories.js";
 import type { AppParams, WatchedNetwork } from "./domain/types/ContextTypes.js";
 import { MidenClient } from "./lib/clients/cardIssuing/miden/MidenClient.js";
 import { CircleClient } from "./lib/clients/circle/CircleClient.js";
@@ -51,10 +53,11 @@ export async function bootstrapApplication(env: NodeJS.ProcessEnv = process.env)
 
   // ----- data -----
   const pool = new pg.Pool({ connectionString: env.DATABASE_URL ?? "postgres://localhost/agent_cards", max: 10 });
-  const store = new PgLedgerStore(pool);
-  await store.migrate();
-  const ledger = new Ledger(undefined, store);
-  const addresses = new PgDepositAddresses(pool, chain);
+  await migrate(pool);
+  const db = createDatabase(pool);
+  const repos = createRepositories(db);
+  const ledger = new Ledger(undefined, repos.ledger);
+  const addresses = createDepositAddressRepository(db, chain);
 
   // ----- card issuing (Miden) -----
   const miden = new MidenClient({
@@ -68,7 +71,7 @@ export async function bootstrapApplication(env: NodeJS.ProcessEnv = process.env)
   const funding = new MidenWalletFunding(miden);
   // Card vault: secureCardDetails are captured at issue time (Miden may only give the PAN once). Without
   // CARD_VAULT_KEY cards still issue, but their details are not kept and they can never pay hosted checkouts.
-  const vault = env.CARD_VAULT_KEY ? new PgCardVault(pool, vaultKeyFromEnv(env)) : undefined;
+  const vault = env.CARD_VAULT_KEY ? new SealedCardVault(repos.vault, vaultKeyFromEnv(env)) : undefined;
   if (!vault) log("WARNING: CARD_VAULT_KEY is not set: card details are NOT captured at issue, and checkout swaps are off");
   const cards = new CardService(miden, funding, undefined, vault
     ? { vault, keys: { clientId: need("MIDEN_CLIENT_ID"), uniqueKey: need("MIDEN_UNIQUE_KEY") }, log }
@@ -104,11 +107,11 @@ export async function bootstrapApplication(env: NodeJS.ProcessEnv = process.env)
   const rpcUrl = env.BASE_RPC_URL ?? "https://base-sepolia-rpc.publicnode.com";
   const rpc = jsonRpc(rpcUrl);
   const allNetworks: WatchedNetwork[] = [
-    { label: chain, token: BASE_SEPOLIA_USDC, rpc, cursor: new PgCursor(pool, `${chain}:usdc`), confirmations: 5 },
+    { label: chain, token: BASE_SEPOLIA_USDC, rpc, cursor: createCursorStore(db, `${chain}:usdc`), confirmations: 5 },
     {
       label: "ethereum-sepolia", token: ETHEREUM_SEPOLIA_USDC, confirmations: 5,
       rpc: jsonRpc(env.ETHEREUM_SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com"),
-      cursor: new PgCursor(pool, "ethereum-sepolia:usdc"),
+      cursor: createCursorStore(db, "ethereum-sepolia:usdc"),
     },
   ];
 
@@ -129,7 +132,7 @@ export async function bootstrapApplication(env: NodeJS.ProcessEnv = process.env)
   log(`payout account (Base Sepolia, fund with test USDC + ETH): ${payoutAccount.address}`);
 
   const params: AppParams = {
-    pool, ledger, addresses,
+    pool, db, repos, ledger, addresses,
     miden, lifecycle, cards, funding, tiers: DEFAULT_TIERS, vault,
     wallets,
     chain,

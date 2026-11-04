@@ -8,11 +8,13 @@
 // Vault: with DATABASE_URL + CARD_VAULT_KEY it reads the Postgres vault (cards captured by card-capture-check.ts
 // --persist). Otherwise it captures the card's details into a throwaway in-memory vault through Miden's full-PAN
 // endpoint (Kai's CardService.captureDetails). Prints last four only. Sandbox host only: refuses anything else.
+import { createDatabase } from "../src/db/client.js";
+import { createCardVaultRepository } from "../src/db/repositories/createCardVaultRepository.js";
 import pg from "pg";
 import { CardLifecycle, type CardTransaction } from "../src/adapters/virtualCards/CardLifecycle.js";
 import { CardService } from "../src/adapters/virtualCards/CardService.js";
 import { MidenClient } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
-import { MemoryCardVault, PgCardVault, vaultKeyFromEnv, type CardDetails, type CardVault } from "../src/adapters/cardVault/CardVault.js";
+import { MemoryCardVault, SealedCardVault, vaultKeyFromEnv, type CardDetails, type CardVault } from "../src/adapters/cardVault/CardVault.js";
 import { PlaywrightFiller } from "../src/adapters/checkoutFillers/PlaywrightFiller.js";
 import { startCheckoutFixture } from "../src/adapters/checkoutFillers/fixtures/stripeFixture.js";
 import { scrub } from "../src/adapters/checkoutFillers/CheckoutFiller.js";
@@ -45,7 +47,7 @@ let pool: pg.Pool | undefined;
 let vault: CardVault;
 if (env.DATABASE_URL && env.CARD_VAULT_KEY) {
   pool = new pg.Pool({ connectionString: env.DATABASE_URL, max: 2 });
-  vault = new PgCardVault(pool, vaultKeyFromEnv());
+  vault = new SealedCardVault(createCardVaultRepository(createDatabase(pool)), vaultKeyFromEnv());
   console.log("vault: Postgres (DATABASE_URL)");
 } else {
   vault = new MemoryCardVault();

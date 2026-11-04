@@ -1,4 +1,6 @@
-import type pg from "pg";
+import type { Database } from "../../db/client.js";
+import { AdvisoryLock, withTryAdvisoryLock } from "../../db/locks.js";
+import type { PayoutRepository } from "../../domain/repositories/PayoutRepository.js";
 import type { Ledger } from "../services/Ledger.js";
 import type { SignedTransfer, TransferState } from "../../adapters/payouts/UsdcPayoutRail.js";
 import { PAYOUT_CHAIN, type CheckoutInteractor } from "./CheckoutInteractor.js";
@@ -13,15 +15,15 @@ export interface PayoutRail {
 }
 
 export interface PayoutContext {
-  pool: pg.Pool;
+  /** Only for the cross-process sender lock. */
+  db: Database;
+  payouts: PayoutRepository;
   ledger: Pick<Ledger, "findByKey">;
   checkout: Pick<CheckoutInteractor, "settlePayout">;
   rail: PayoutRail;
   log?: (msg: string) => void;
 }
 
-/** Any number; only needs to differ from the other advisory locks (the migrator uses 727401). */
-const SENDER_LOCK = 727402;
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 /** Failed signing attempts, with the payout account funded, before a payout is failed and released. */
 export const MAX_SIGN_FAILURES = 3;
@@ -52,83 +54,67 @@ export class PayoutInteractor {
 
   /** One sender across processes: the advisory lock is held on one connection for the whole tick. */
   private async locked(): Promise<void> {
-    const c = await this.d.pool.connect();
-    try {
-      if (!(await c.query("SELECT pg_try_advisory_lock($1) AS ok", [SENDER_LOCK])).rows[0].ok) return;
-      try {
-        if (await this.settleInFlight()) await this.sendNext();
-      } finally {
-        await c.query("SELECT pg_advisory_unlock($1)", [SENDER_LOCK]);
-      }
-    } finally {
-      c.release();
-    }
+    await withTryAdvisoryLock(this.d.db, AdvisoryLock.payoutSender, async () => {
+      if (await this.settleInFlight()) await this.sendNext();
+    });
   }
 
   /** Settles the transfer in flight, if any. True when nothing is in flight any more. */
   private async settleInFlight(): Promise<boolean> {
-    const p = (await this.d.pool.query("SELECT * FROM app_payout WHERE status = 'sending'")).rows[0];
+    const p = await this.d.payouts.findSending();
     if (!p) return true;
-    const t = { txHash: p.rail_reference as string, nonce: Number(p.nonce) };
+    const t = { txHash: p.railReference!, nonce: p.nonce! };
     const s = await this.d.rail.state(t);
     if (s.state === "confirmed") {
-      await this.d.checkout.settlePayout(p.payout_id, { sent: true, railReference: t.txHash }, { fromRail: true });
-      this.log(`payout ${p.payout_id}: sent, ${t.txHash}`);
+      await this.d.checkout.settlePayout(p.payoutId, { sent: true, railReference: t.txHash }, { fromRail: true });
+      this.log(`payout ${p.payoutId}: sent, ${t.txHash}`);
       return true;
     }
     if (s.state === "reverted") {
-      await this.d.checkout.settlePayout(p.payout_id, { sent: false, failure: "the USDC transfer reverted on chain; the amount is back in your balance" }, { fromRail: true });
-      this.log(`payout ${p.payout_id}: transfer ${t.txHash} reverted; released`);
+      await this.d.checkout.settlePayout(p.payoutId, { sent: false, failure: "the USDC transfer reverted on chain; the amount is back in your balance" }, { fromRail: true });
+      this.log(`payout ${p.payoutId}: transfer ${t.txHash} reverted; released`);
       return true;
     }
     if (s.state === "replaced") {
       const note = `needs review: nonce ${t.nonce} was used by another transaction, so ${t.txHash} can never be mined. The money is still reserved. Check the payout account's history, then settle this payout by hand.`;
-      const r = await this.d.pool.query("UPDATE app_payout SET needs_review = $2, updated_at = now() WHERE payout_id = $1 AND needs_review IS NULL", [p.payout_id, note]);
-      if (r.rowCount) this.log(`payout ${p.payout_id}: ${note}`);
+      if (await this.d.payouts.flagForReview(p.payoutId, note)) this.log(`payout ${p.payoutId}: ${note}`);
       return false;
     }
-    await this.d.rail.broadcast(p.raw_tx).catch((e) => this.log(`payout ${p.payout_id}: rebroadcast: ${errText(e)}`));
+    await this.d.rail.broadcast(p.rawTx!).catch((e) => this.log(`payout ${p.payoutId}: rebroadcast: ${errText(e)}`));
     return false;
   }
 
   private async sendNext(): Promise<void> {
-    const queue = (await this.d.pool.query("SELECT * FROM app_payout WHERE status = 'requested' AND chain = $1 ORDER BY created_at LIMIT 20", [PAYOUT_CHAIN])).rows;
+    const queue = await this.d.payouts.requestedQueue(PAYOUT_CHAIN, 20);
     for (const p of queue) {
       // A requested row can lack a reservation (both the reserve and its check failed, or it is being reserved
       // right now). It must never be sent; leave it for ops or the next tick.
-      if (!(await this.d.ledger.findByKey(`payout-reserve:${p.payout_id}`))) continue;
+      if (!(await this.d.ledger.findByKey(`payout-reserve:${p.payoutId}`))) continue;
       // Already closed in the ledger (released or completed by ops): never send it.
-      if ((await this.d.ledger.findByKey(`payout-release:${p.payout_id}`)) || (await this.d.ledger.findByKey(`payout-complete:${p.payout_id}`))) continue;
+      if ((await this.d.ledger.findByKey(`payout-release:${p.payoutId}`)) || (await this.d.ledger.findByKey(`payout-complete:${p.payoutId}`))) continue;
       if (!p.destination) continue;
       let signed: SignedTransfer;
       try {
-        signed = await this.d.rail.sign({ to: p.destination, amountCents: Number(p.amount_cents) });
+        signed = await this.d.rail.sign({ to: p.destination, amountCents: p.amountCents });
       } catch (e) {
         // Nothing was signed. If our account is short of USDC or gas, every payout would fail: stop the queue, it
         // stays requested. If we are funded, the cause is this payout (say, a blacklisted destination): skip it so
         // it cannot block other merchants, and after a few tries fail it and release the money (safe: never signed).
-        const funded = await this.d.rail.funded(Number(p.amount_cents)).catch(() => false);
-        const r = await this.d.pool.query(
-          "UPDATE app_payout SET last_error = $2, sign_failures = sign_failures + $3, updated_at = now() WHERE payout_id = $1 AND status = 'requested' RETURNING sign_failures",
-          [p.payout_id, errText(e).slice(0, 300), funded ? 1 : 0],
-        );
-        this.log(`payout ${p.payout_id}: not sent yet: ${errText(e)}`);
+        const funded = await this.d.rail.funded(p.amountCents).catch(() => false);
+        const failures = await this.d.payouts.recordSignFailure(p.payoutId, errText(e).slice(0, 300), funded);
+        this.log(`payout ${p.payoutId}: not sent yet: ${errText(e)}`);
         if (!funded) return;
-        if (Number(r.rows[0]?.sign_failures ?? 0) >= MAX_SIGN_FAILURES) {
+        if ((failures ?? 0) >= MAX_SIGN_FAILURES) {
           await this.d.checkout
-            .settlePayout(p.payout_id, { sent: false, failure: "the transfer to your payout address could not be made; the amount is back in your balance" })
-            .catch((err) => this.log(`payout ${p.payout_id}: fail after ${MAX_SIGN_FAILURES} tries: ${errText(err)}`));
+            .settlePayout(p.payoutId, { sent: false, failure: "the transfer to your payout address could not be made; the amount is back in your balance" })
+            .catch((err) => this.log(`payout ${p.payoutId}: fail after ${MAX_SIGN_FAILURES} tries: ${errText(err)}`));
         }
         continue;
       }
       // Stored BEFORE broadcast: a crash after it leaves bytes to rebroadcast, never a second transfer.
-      const r = await this.d.pool.query(
-        "UPDATE app_payout SET status = 'sending', rail_reference = $2, raw_tx = $3, nonce = $4, last_error = NULL, updated_at = now() WHERE payout_id = $1 AND status = 'requested'",
-        [p.payout_id, signed.txHash, signed.rawTx, signed.nonce],
-      );
-      if (!r.rowCount) continue; // settled by someone else meanwhile; the signed bytes are dropped unsent
-      this.log(`payout ${p.payout_id}: ${p.amount_cents}c to ${p.destination}, ${signed.txHash}`);
-      await this.d.rail.broadcast(signed.rawTx).catch((e) => this.log(`payout ${p.payout_id}: broadcast: ${errText(e)} (retried next tick)`));
+      if (!(await this.d.payouts.markSending(p.payoutId, signed))) continue; // settled by someone else meanwhile; the signed bytes are dropped unsent
+      this.log(`payout ${p.payoutId}: ${p.amountCents}c to ${p.destination}, ${signed.txHash}`);
+      await this.d.rail.broadcast(signed.rawTx).catch((e) => this.log(`payout ${p.payoutId}: broadcast: ${errText(e)} (retried next tick)`));
       return;
     }
   }

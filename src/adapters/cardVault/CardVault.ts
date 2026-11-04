@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import type pg from "pg";
+import type { CardVaultRepository } from "../../domain/repositories/CardVaultRepository.js";
 
 /**
  * Full card details, as captured from Miden at issue time. Never log, return to an agent, or send to a merchant:
@@ -82,61 +82,41 @@ export function open(key: Buffer, cardId: string, box: { iv: Buffer; ciphertext:
   return JSON.parse(Buffer.concat([d.update(box.ciphertext), d.final()]).toString("utf8")) as CardDetails;
 }
 
-/** Postgres vault (tables card_vault, card_vault_audit: migration 008). Run PgLedgerStore.migrate() first. */
-export class PgCardVault implements CardVault {
+/**
+ * The production vault: seals details in this process (the key never reaches the database) and keeps the sealed
+ * boxes and the audit trail in a CardVaultRepository.
+ */
+export class SealedCardVault implements CardVault {
   private readonly key: Buffer;
 
   /** `keyId` is stored with each row so a later key rotation can tell old rows from new. */
-  constructor(private readonly pool: pg.Pool, key: Buffer, private readonly keyId = "v1") {
+  constructor(private readonly repo: CardVaultRepository, key: Buffer, private readonly keyId = "v1") {
     if (key.length !== KEY_BYTES) throw new Error(`vault key must be ${KEY_BYTES} bytes`);
     this.key = Buffer.from(key);
   }
 
   async put(cardId: string, details: CardDetails, opts: { source?: CaptureSource } = {}): Promise<void> {
     validateDetails(details);
-    const box = seal(this.key, cardId, details);
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      const r = await client.query<{ inserted: boolean }>(
-        `INSERT INTO card_vault (card_id, key_id, iv, ciphertext, tag, last4, source) VALUES ($1, $2, $3, $4, $5, $6, $7)
-         ON CONFLICT (card_id) DO UPDATE SET key_id = $2, iv = $3, ciphertext = $4, tag = $5, last4 = $6, source = $7, updated_at = now()
-         RETURNING (xmax = 0) AS inserted`,
-        [cardId, this.keyId, box.iv, box.ciphertext, box.tag, details.pan.slice(-4), opts.source ?? "issue"],
-      );
-      await client.query("INSERT INTO card_vault_audit (card_id, action, purpose) VALUES ($1, $2, $3)", [
-        cardId, r.rows[0]!.inserted ? "put" : "overwrite", `capture:${opts.source ?? "issue"}`,
-      ]);
-      await client.query("COMMIT");
-    } catch (e) {
-      await client.query("ROLLBACK").catch(() => undefined);
-      throw e;
-    } finally {
-      client.release();
-    }
+    await this.repo.store(cardId, { keyId: this.keyId, ...seal(this.key, cardId, details) }, { last4: details.pan.slice(-4), source: opts.source ?? "issue" });
   }
 
   async reveal(cardId: string, purpose: string): Promise<CardDetails | null> {
     checkPurpose(purpose);
-    const r = await this.pool.query<{ key_id: string; iv: Buffer; ciphertext: Buffer; tag: Buffer }>(
-      "SELECT key_id, iv, ciphertext, tag FROM card_vault WHERE card_id = $1", [cardId],
-    );
-    const row = r.rows[0];
+    const box = await this.repo.find(cardId);
     // The audit row is written before decrypting: no audit, no reveal.
-    await this.pool.query("INSERT INTO card_vault_audit (card_id, action, purpose) VALUES ($1, $2, $3)", [cardId, row ? "reveal" : "reveal_miss", purpose]);
-    if (!row) return null;
-    if (row.key_id !== this.keyId) throw new Error(`card ${cardId} is sealed under vault key ${row.key_id}, this process has ${this.keyId}`);
-    return open(this.key, cardId, row);
+    await this.repo.audit(cardId, box ? "reveal" : "reveal_miss", purpose);
+    if (!box) return null;
+    if (box.keyId !== this.keyId) throw new Error(`card ${cardId} is sealed under vault key ${box.keyId}, this process has ${this.keyId}`);
+    return open(this.key, cardId, box);
   }
 
-  async has(cardId: string): Promise<boolean> {
-    return (await this.pool.query("SELECT 1 FROM card_vault WHERE card_id = $1", [cardId])).rowCount === 1;
+  has(cardId: string): Promise<boolean> {
+    return this.repo.exists(cardId);
   }
 
   async discard(cardId: string, purpose: string): Promise<void> {
     checkPurpose(purpose);
-    const r = await this.pool.query("DELETE FROM card_vault WHERE card_id = $1", [cardId]);
-    if (r.rowCount) await this.pool.query("INSERT INTO card_vault_audit (card_id, action, purpose) VALUES ($1, 'discard', $2)", [cardId, purpose]);
+    if (await this.repo.remove(cardId)) await this.repo.audit(cardId, "discard", purpose);
   }
 }
 

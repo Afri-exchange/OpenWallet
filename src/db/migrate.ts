@@ -2,10 +2,11 @@ import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type pg from "pg";
+import { AdvisoryLock } from "./locks.js";
 
 const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), "migrations");
-/** Any number; only needs to differ from the other advisory locks (see src/db/locks.ts). */
-export const MIGRATOR_LOCK = 727401;
+/** See src/db/locks.ts. */
+export const MIGRATOR_LOCK = AdvisoryLock.migrator;
 
 /**
  * Applies any src/db/migrations/*.sql not yet recorded in ledger_migrations, each in its own transaction, one migrator
