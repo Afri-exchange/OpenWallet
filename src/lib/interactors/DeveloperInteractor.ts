@@ -1,12 +1,14 @@
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
-import type pg from "pg";
+import type { DeveloperRepository } from "../../domain/repositories/DeveloperRepository.js";
+import type { ClaimedWebhookEvent, WebhookEventRepository } from "../../domain/repositories/WebhookEventRepository.js";
 import { type CardholderInteractor } from "./CardholderInteractor.js";
 import { badRequestError, conflictError, notFoundError } from "../../errors.js";
 
 export interface DeveloperContext {
-  pool: pg.Pool;
+  developers: DeveloperRepository;
+  webhookEvents: WebhookEventRepository;
   app: CardholderInteractor;
   /** Sandbox only: webhooks may go to http://localhost and private addresses (a developer's local server). */
   allowLocalWebhooks: boolean;
@@ -102,36 +104,29 @@ export class DeveloperInteractor {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw badRequestError("email is not valid");
     const developerId = newId("dev");
     const key = newSecret("dk");
-    try {
-      await this.d.pool.query("INSERT INTO app_developer (id, name, email, key_hash) VALUES ($1, $2, $3, $4)", [developerId, name, email, hashKey(key)]);
-    } catch (e) {
-      if ((e as { code?: string }).code === "23505") throw conflictError("that email already has a developer account");
-      throw e;
+    if (!(await this.d.developers.create({ id: developerId, name, email, keyHash: hashKey(key) }))) {
+      throw conflictError("that email already has a developer account");
     }
     return { developerId, key };
   }
 
   async byKey(key: string): Promise<string | undefined> {
-    const r = await this.d.pool.query("SELECT id FROM app_developer WHERE key_hash = $1", [hashKey(key)]);
-    return r.rows[0]?.id;
+    return this.d.developers.idByKeyHash(hashKey(key));
   }
 
   async rotateKey(developerId: string): Promise<{ key: string }> {
     const key = newSecret("dk");
-    await this.d.pool.query("UPDATE app_developer SET key_hash = $2 WHERE id = $1", [developerId, hashKey(key)]);
+    await this.d.developers.setKeyHash(developerId, hashKey(key));
     // A rotated key means "something may have leaked": the browser sessions it minted go too.
-    await this.d.pool.query("DELETE FROM app_session WHERE developer_id = $1", [developerId]);
+    await this.d.developers.deleteSessions(developerId);
     return { key };
   }
 
   async profile(developerId: string) {
-    const r = (await this.d.pool.query("SELECT * FROM app_developer WHERE id = $1", [developerId])).rows[0];
+    const r = await this.d.developers.find(developerId);
     if (!r) throw notFoundError("developer not found");
-    const users = Number((await this.d.pool.query("SELECT count(*) AS n FROM app_user WHERE developer_id = $1", [developerId])).rows[0].n);
-    return {
-      developerId, name: r.name as string, email: r.email as string, privacyMode: r.privacy_mode as boolean,
-      webhookUrl: (r.webhook_url as string | null) ?? null, users, events: [...EVENT_TYPES],
-    };
+    const users = await this.d.developers.countUsers(developerId);
+    return { developerId, name: r.name, email: r.email, privacyMode: r.privacyMode, webhookUrl: r.webhookUrl, users, events: [...EVENT_TYPES] };
   }
 
   /**
@@ -143,27 +138,28 @@ export class DeveloperInteractor {
     const out: { privacyMode: boolean; webhookUrl: string | null; webhookSecret?: string } = { privacyMode: false, webhookUrl: null };
     if (body.privacyMode !== undefined) {
       if (typeof body.privacyMode !== "boolean") throw badRequestError("privacyMode must be true or false");
-      await this.d.pool.query("UPDATE app_developer SET privacy_mode = $2 WHERE id = $1", [developerId, body.privacyMode]);
+      await this.d.developers.setPrivacyMode(developerId, body.privacyMode);
     }
     if (body.webhookUrl !== undefined) {
       if (body.webhookUrl === null || body.webhookUrl === "") {
-        await this.d.pool.query("UPDATE app_developer SET webhook_url = NULL, webhook_secret = NULL WHERE id = $1", [developerId]);
+        await this.d.developers.setWebhook(developerId, null, null);
       } else {
         const url = await this.checkWebhookUrl(body.webhookUrl);
         const secret = newSecret("whsec");
-        await this.d.pool.query("UPDATE app_developer SET webhook_url = $2, webhook_secret = $3 WHERE id = $1", [developerId, url.href, secret]);
+        await this.d.developers.setWebhook(developerId, url.href, secret);
         out.webhookSecret = secret;
       }
     }
-    const r = (await this.d.pool.query("SELECT privacy_mode, webhook_url FROM app_developer WHERE id = $1", [developerId])).rows[0];
-    out.privacyMode = r.privacy_mode;
-    out.webhookUrl = r.webhook_url;
+    const r = await this.d.developers.find(developerId);
+    // As before: an unknown developer id fails here (there is no row to read back).
+    if (!r) throw new TypeError(`developer ${developerId} not found`);
+    out.privacyMode = r.privacyMode;
+    out.webhookUrl = r.webhookUrl;
     return out;
   }
 
   async privacyMode(developerId: string): Promise<boolean> {
-    const r = await this.d.pool.query("SELECT privacy_mode FROM app_developer WHERE id = $1", [developerId]);
-    return r.rows[0]?.privacy_mode === true;
+    return (await this.d.developers.find(developerId))?.privacyMode === true;
   }
 
   // ---------- end users ----------
@@ -174,11 +170,8 @@ export class DeveloperInteractor {
   }
 
   async listUsers(developerId: string, limit: number, externalId?: string) {
-    const rows = (await this.d.pool.query(
-      `SELECT id FROM app_user WHERE developer_id = $1 AND ($3::text IS NULL OR external_id = $3) ORDER BY created_at DESC LIMIT $2`,
-      [developerId, Math.min(Math.max(limit, 1), 100), externalId ?? null],
-    )).rows;
-    return Promise.all(rows.map((r) => this.userView(developerId, r.id)));
+    const ids = await this.d.developers.listUserIds(developerId, Math.min(Math.max(limit, 1), 100), externalId);
+    return Promise.all(ids.map((id) => this.userView(developerId, id)));
   }
 
   async userView(developerId: string, userId: string) {
@@ -211,8 +204,7 @@ export class DeveloperInteractor {
   /** Ends every browser session of one of the developer's users. */
   async revokeSessions(developerId: string, userId: string): Promise<{ revoked: number }> {
     await this.owned(developerId, userId);
-    const r = await this.d.pool.query("DELETE FROM app_session WHERE developer_id = $1 AND user_id = $2", [developerId, userId]);
-    return { revoked: r.rowCount ?? 0 };
+    return { revoked: await this.d.developers.deleteSessions(developerId, userId) };
   }
 
   // ---------- agents (the developer controls a user's agents) ----------
@@ -277,11 +269,11 @@ export class DeveloperInteractor {
   readonly onEvent = async (userId: string, type: string, data: Record<string, unknown>): Promise<void> => {
     const owner = await this.d.app.userOwner(userId);
     if (!owner?.developerId) return;
-    const dev = (await this.d.pool.query("SELECT webhook_url FROM app_developer WHERE id = $1", [owner.developerId])).rows[0];
-    if (!dev?.webhook_url) return;
+    const dev = await this.d.developers.find(owner.developerId);
+    if (!dev?.webhookUrl) return;
     const id = newId("evt", 12);
     const body = JSON.stringify({ id, type, createdAt: this.now().toISOString(), userId, externalId: owner.externalId, data });
-    await this.d.pool.query("INSERT INTO app_webhook_event (id, developer_id, type, body, next_attempt_at) VALUES ($1, $2, $3, $4, $5)", [id, owner.developerId, type, body, this.now()]);
+    await this.d.webhookEvents.enqueue({ id, developerId: owner.developerId, type, body, nextAttemptAt: this.now() });
   };
 
   /** Signature header: `t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<body>" with the webhook secret>`. Reject old `t` to stop replays. */
@@ -298,50 +290,35 @@ export class DeveloperInteractor {
   private async doDeliver(): Promise<void> {
     const doFetch = this.d.fetch ?? fetch;
     // Finished events are history, not a queue: keep 30 days.
-    await this.d.pool.query("DELETE FROM app_webhook_event WHERE status <> 'pending' AND created_at < $1", [new Date(this.now().getTime() - 30 * 86_400_000)]).catch(() => undefined);
+    await this.d.webhookEvents.purgeFinishedBefore(new Date(this.now().getTime() - 30 * 86_400_000)).catch(() => undefined);
     for (;;) {
-      const c = await this.d.pool.connect();
-      let ev: Record<string, any> | undefined;
-      try {
-        await c.query("BEGIN");
-        // Claim one due event; SKIP LOCKED lets several processes share the queue. The claim pushes next_attempt_at out
-        // so a crash mid-delivery means a retry later, not a stuck row.
-        ev = (await c.query(
-          `SELECT e.*, d.webhook_url, d.webhook_secret FROM app_webhook_event e JOIN app_developer d ON d.id = e.developer_id
-           WHERE e.status = 'pending' AND e.next_attempt_at <= $1 ORDER BY e.next_attempt_at LIMIT 1 FOR UPDATE OF e SKIP LOCKED`,
-          [this.now()],
-        )).rows[0];
-        if (ev) await c.query("UPDATE app_webhook_event SET next_attempt_at = $2 WHERE id = $1", [ev.id, new Date(this.now().getTime() + 5 * 60_000)]);
-        await c.query("COMMIT");
-      } catch (e) {
-        await c.query("ROLLBACK").catch(() => undefined);
-        throw e;
-      } finally {
-        c.release();
-      }
+      // Claim one due event; SKIP LOCKED lets several processes share the queue. The claim pushes next_attempt_at out
+      // so a crash mid-delivery means a retry later, not a stuck row.
+      const ev = await this.d.webhookEvents.claimDue(this.now(), new Date(this.now().getTime() + 5 * 60_000));
       if (!ev) return;
       await this.deliverOne(ev, doFetch);
     }
   }
 
-  private async deliverOne(ev: Record<string, any>, doFetch: typeof fetch): Promise<void> {
+  private async deliverOne(ev: ClaimedWebhookEvent, doFetch: typeof fetch): Promise<void> {
     const fail = async (why: string) => {
-      const attempts = Number(ev.attempts) + 1;
+      const attempts = ev.attempts + 1;
       if (attempts >= MAX_ATTEMPTS) {
-        await this.d.pool.query("UPDATE app_webhook_event SET status = 'failed', attempts = $2, last_error = $3 WHERE id = $1", [ev.id, attempts, why]);
+        await this.d.webhookEvents.markFailed(ev.id, attempts, why);
         this.log(`webhook ${ev.id}: gave up after ${attempts} tries: ${why}`);
       } else {
         const wait = Math.min(30_000 * 2 ** (attempts - 1), 6 * 3_600_000);
-        await this.d.pool.query("UPDATE app_webhook_event SET attempts = $2, last_error = $3, next_attempt_at = $4 WHERE id = $1", [ev.id, attempts, why, new Date(this.now().getTime() + wait)]);
+        await this.d.webhookEvents.scheduleRetry(ev.id, attempts, why, new Date(this.now().getTime() + wait));
       }
     };
-    if (!ev.webhook_url || !ev.webhook_secret) {
+    const { webhookUrl, webhookSecret } = ev;
+    if (!webhookUrl || !webhookSecret) {
       // The developer removed their webhook after the event was queued.
-      await this.d.pool.query("UPDATE app_webhook_event SET status = 'failed', last_error = 'no webhook configured' WHERE id = $1", [ev.id]);
+      await this.d.webhookEvents.abandon(ev.id, "no webhook configured");
       return;
     }
     try {
-      const url = new URL(ev.webhook_url);
+      const url = new URL(webhookUrl);
       await this.assertPublicHost(url.hostname);
       const ts = Math.floor(this.now().getTime() / 1000);
       const res = await doFetch(url, {
@@ -349,14 +326,14 @@ export class DeveloperInteractor {
         headers: {
           "content-type": "application/json",
           "x-agentcards-event-id": ev.id,
-          "x-agentcards-signature": DeveloperInteractor.sign(ev.webhook_secret, ts, ev.body),
+          "x-agentcards-signature": DeveloperInteractor.sign(webhookSecret, ts, ev.body),
         },
         body: ev.body,
         redirect: "manual", // a redirect could point somewhere we would not have allowed
         signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
       });
       if (res.status >= 200 && res.status < 300) {
-        await this.d.pool.query("UPDATE app_webhook_event SET status = 'delivered', attempts = attempts + 1, delivered_at = now(), last_error = NULL WHERE id = $1", [ev.id]);
+        await this.d.webhookEvents.markDelivered(ev.id);
       } else {
         await fail(`HTTP ${res.status}`);
       }
@@ -367,13 +344,9 @@ export class DeveloperInteractor {
 
   /** What the developer's webhook has received, for debugging. Bodies are not returned. */
   async listEvents(developerId: string, limit: number) {
-    const rows = (await this.d.pool.query(
-      "SELECT id, type, status, attempts, last_error, created_at, delivered_at FROM app_webhook_event WHERE developer_id = $1 ORDER BY created_at DESC LIMIT $2",
-      [developerId, Math.min(Math.max(limit, 1), 100)],
-    )).rows;
+    const rows = await this.d.webhookEvents.listForDeveloper(developerId, Math.min(Math.max(limit, 1), 100));
     return rows.map((r) => ({
-      id: r.id as string, type: r.type as string, status: r.status as string, attempts: Number(r.attempts),
-      lastError: (r.last_error as string | null) ?? null, createdAt: r.created_at, deliveredAt: r.delivered_at ?? null,
+      id: r.id, type: r.type, status: r.status as string, attempts: r.attempts, lastError: r.lastError, createdAt: r.createdAt, deliveredAt: r.deliveredAt,
     }));
   }
 }

@@ -63,7 +63,7 @@ async function setup(opts: { allowLocalWebhooks?: boolean; fetch?: typeof fetch;
     ...deps,
   } as unknown as CardholderContext);
   dev = new DeveloperInteractor({
-    pool, app, allowLocalWebhooks: opts.allowLocalWebhooks ?? false, publicUrl: "https://cards.example", now: () => new Date(clock),
+    developers: repos.developers, webhookEvents: repos.webhookEvents, app, allowLocalWebhooks: opts.allowLocalWebhooks ?? false, publicUrl: "https://cards.example", now: () => new Date(clock),
     fetch: opts.fetch, resolve: opts.resolve ?? (async () => ["93.184.216.34"]),
   });
   return { pool, app, dev, f, advance: (ms: number) => (clock += ms) };

@@ -15,7 +15,9 @@
     "test": "tsx --test test/*.test.ts",
     "swap:rehearse": "tsx scripts/swap-rehearsal.ts",
     "swap:sandbox-e2e": "tsx scripts/swap-sandbox-e2e.ts",
-    "swap:live-test": "tsx scripts/swap-live-test.ts"
+    "swap:live-test": "tsx scripts/swap-live-test.ts",
+    "db:studio": "drizzle-kit studio",
+    "db:check": "tsx --test test/db-schema.test.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

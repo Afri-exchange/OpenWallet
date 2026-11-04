@@ -153,17 +153,28 @@ Wired at the top by `bootstrap.ts` (env -> `AppParams`) and `createApp.ts` (`App
 | `src/lib/interactors/` | Use cases: `CardholderInteractor` (signup, KYC, card, deposits, agents, `pay`, reconcile), `CheckoutInteractor`, `PayoutInteractor`, `SwapInteractor`, `DeveloperInteractor` |
 | `src/lib/services/` | Business rules: `Ledger` (double entry), `AgentWallets` (agent sub-balances, `spend()` check order), `spendPolicy` (`evaluate()`), `tiers` |
 | `src/lib/clients/` | External API clients: `cardIssuing/miden/` (`MidenClient`, request signing, card-detail decryption, webhook signature) and `circle/CircleClient` |
-| `src/adapters/` | Our side of each integration: `virtualCards/` (`CardService`, `CardLifecycle`), `funding/` (`MidenWalletFunding`), `deposits/` (`BaseUsdcWatcher`, `CircleDeposits` webhook processor, `simDeposit`), `payouts/` (`UsdcPayoutRail`), `checkoutFillers/` (Stripe, Shopify, Lemon Squeezy, Paddle, with local fixtures), `cardVault/` (`PgCardVault`), `wallet/` (`HdDepositWallet`), `onboarding/` (Card KYC) |
-| `src/db/repositories/` | `PgLedgerStore`, `MemoryLedgerStore`, `PgCursor` + `PgDepositAddresses` |
-| `src/db/migrations/` | SQL migrations, applied in order at boot |
-| `src/domain/` | `interfaces/` (`FundingSource`), `repositories/` (`LedgerStore`), `types/` (`AppParams`, `AppRequest`) |
+| `src/adapters/` | Our side of each integration: `virtualCards/` (`CardService`, `CardLifecycle`), `funding/` (`MidenWalletFunding`), `deposits/` (`BaseUsdcWatcher`, `CircleDeposits` webhook processor, `simDeposit`), `payouts/` (`UsdcPayoutRail`), `checkoutFillers/` (Stripe, Shopify, Lemon Squeezy, Paddle, with local fixtures), `cardVault/` (`SealedCardVault`: seals in-process, stores through `CardVaultRepository`), `wallet/` (`HdDepositWallet`), `onboarding/` (Card KYC) |
+| `src/db/schema/` | The Drizzle schema: every table, key, index and CHECK as TypeScript, one file per area |
+| `src/db/client.ts` | `createDatabase(pool)` (the Drizzle handle), `Executor`/`Transaction` types, Postgres error helpers |
+| `src/db/repositories/` | One `createXRepository(db)` factory per aggregate (the Afriex pattern), gathered by `createRepositories(db)`; plus `createLedgerStore`, `createChainRepositories` (cursors, deposit addresses) and `MemoryLedgerStore` for unit tests |
+| `src/db/migrate.ts`, `src/db/migrations/` | Reviewed SQL migrations, applied in order at boot under an advisory lock |
+| `src/db/locks.ts` | Advisory lock keys and helpers |
+| `src/domain/` | `interfaces/` (`FundingSource`), `repositories/` (one interface per repository), `types/` (`AppParams`, `AppRequest`, `Entities`: stored records inferred from the schema) |
 | `src/presentation/` | Static site (`web/`), `staticFiles.ts`, the checkout page, the agent MCP server definition |
 | `sdk/checkout/` | `@agent-cards/checkout`, the merchant and agent client SDK |
 | `examples/` | `shop/` (a complete merchant) and `developer/` (runnable demos of the developer API) |
 | `scripts/` | Sandbox bring-up, quickstart, end-to-end demo, Miden probes, swap rehearsals |
 | `test/` | `node:test` suites |
 
-Not yet ported: the interactors still hold their own SQL. Afriex keeps queries in `db/repositories/` behind interfaces in `domain/repositories/`; moving them there is the next step (see [production-gaps.md](production-gaps.md)).
+### Data access (Drizzle ORM)
+
+Interactors never see SQL or the connection pool. They receive the repositories they use (`users`, `spends`, `checkouts`, ...) through their context; each repository is an interface in `src/domain/repositories/` implemented by a factory in `src/db/repositories/` with the Drizzle query builder, and returns typed records (`src/domain/types/Entities.ts`: camelCase, cents as safe integers, timestamps as `Date`).
+
+- **Transactions** live inside repository methods: an operation that must be atomic (lock a row, check, write) is one method that runs `db.transaction`, so callers cannot leave one half open.
+- **Locks** use the builder (`.for("update")`, `skipLocked`); advisory locks go through `src/db/locks.ts`, where every key is listed.
+- **Money columns** are `BIGINT` read through `bigintNumber` (`src/db/schema/columns.ts`), which throws instead of rounding anything past 2^53.
+- **`sql` fragments** appear only inside repositories, for what has no builder: `now()`, `balance + n`, `nextval`, `pg_advisory_*`, `ledger_check_balances()`.
+- **Migrations stay reviewed SQL** (they carry the ledger's append-only triggers and integrity function, which Drizzle does not model). `test/db-schema.test.ts` builds one database from the migrations and one from the Drizzle schema and fails on any difference in columns, types, nullability, defaults, constraints (by name) or indexes. To change the schema: edit `src/db/schema/`, add the next `src/db/migrations/0NN_*.sql`, run that test.
 
 `src/index.ts` is the library surface: `MidenClient`, `CardService`, `evaluate`, `Ledger`, the stores, the watcher, `DeveloperInteractor` and the errors.
 
@@ -171,8 +182,8 @@ Not yet ported: the interactors still hold their own SQL. Afriex keeps queries i
 
 `bootstrapApplication(env)` is the only code that reads the environment. In order it:
 
-1. Checks the sandbox guard, opens the Postgres pool (10 connections), and runs migrations (`PgLedgerStore.migrate()`, under an advisory lock).
-2. Builds `Ledger`, `MidenClient`, `CardLifecycle`, `MidenWalletFunding`, the optional `PgCardVault` (needs `CARD_VAULT_KEY`), `CardService`, `AgentWallets`, and the HD deposit wallet.
+1. Checks the sandbox guard, opens the Postgres pool (10 connections), and runs migrations (`migrate(pool)`, under an advisory lock), then builds the Drizzle handle and every repository (`createRepositories`).
+2. Builds `Ledger`, `MidenClient`, `CardLifecycle`, `MidenWalletFunding`, the optional `SealedCardVault` (needs `CARD_VAULT_KEY`), `CardService`, `AgentWallets`, and the HD deposit wallet.
 3. Builds the Circle client and `CircleDeposits` when `CIRCLE_API_KEY` is set, the networks to watch, the payout rail and the swap config.
 
 `createApp(params)` builds `CardholderInteractor`, `DeveloperInteractor` (the two reference each other: the cardholder side reports events, the developer side delivers them, so the link is a late binding), `CheckoutInteractor`, `SwapInteractor` (only if `SWAP_ENABLED=1` and a vault) and `PayoutInteractor`.
@@ -350,7 +361,7 @@ Merchant creates `cs_...` -> agent pays it through step 7.3 -> checkout `paid` -
 
 ## 8. Data model
 
-Migrations are `src/db/migrations/001..011`, applied in order at boot and recorded in `ledger_migrations`.
+Migrations are `src/db/migrations/001..011`, applied in order at boot and recorded in `ledger_migrations`. The same tables are described in TypeScript in `src/db/schema/`, and `test/db-schema.test.ts` keeps the two identical.
 
 | Migration | Adds |
 | --- | --- |

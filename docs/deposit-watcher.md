@@ -2,7 +2,7 @@
 
 An alternative rail that needs no polling (Circle wallets plus webhooks) is in [circle-deposits.md](circle-deposits.md).
 
-Code: `src/adapters/deposits/BaseUsdcWatcher.ts` (watcher), `src/db/repositories/PgChainRepositories.ts` (Postgres cursor and address book), `src/lib/utils/units.ts` (unit conversion), migration `src/db/migrations/002_chain.sql`. Wired up in `src/main.ts`. Status as of 2026-10-19: the watcher is unit-tested and was checked read-only against Base mainnet (three public RPCs; credited cents matched an independent sum of that block's transfers). The Postgres classes typecheck and have tests (`test/chain-pg.test.ts`, run only when `DATABASE_URL` is set); README item 4 records that they had not yet been run against Postgres. The sandbox service is configured to use them on **Base Sepolia**; I have not confirmed a real Sepolia deposit end to end.
+Code: `src/adapters/deposits/BaseUsdcWatcher.ts` (watcher), `src/db/repositories/createChainRepositories.ts` (Postgres cursor and address book), `src/lib/utils/units.ts` (unit conversion), migration `src/db/migrations/002_chain.sql`. Wired up in `src/main.ts`. Status as of 2026-10-19: the watcher is unit-tested and was checked read-only against Base mainnet (three public RPCs; credited cents matched an independent sum of that block's transfers). The Postgres classes typecheck and have tests (`test/chain-pg.test.ts`, run only when `DATABASE_URL` is set); README item 4 records that they had not yet been run against Postgres. The sandbox service is configured to use them on **Base Sepolia**; I have not confirmed a real Sepolia deposit end to end.
 
 ## Second network: Ethereum Sepolia
 
@@ -60,14 +60,14 @@ The provider's filter is not trusted. Each log is re-checked, and a log is **ski
 The ledger key for a deposit is `deposit:<chain>:<txHash lower-cased>:<logIndex>`. So:
 
 - A crash mid-range leaves the cursor behind; the next tick re-reads the range and every already-credited log is a no-op. Nothing is credited twice, nothing is skipped.
-- Two watchers on one cursor cannot rewind each other: `PgCursor.set` only moves **forward** (`GREATEST` in SQL).
+- Two watchers on one cursor cannot rewind each other: the cursor store's `set` only moves **forward** (`GREATEST` in SQL).
 - A *different* deposit with the same key content is impossible (one transfer = one chain + hash + log index); the same key with different content is rejected as an error.
 
 `rescan(from, to)` re-reads a closed block range and credits anything missed without touching the cursor. It refuses a range that includes unconfirmed blocks. Use it when an address was issued late or an RPC dropped logs.
 
 **Reorgs:** we only look at blocks `confirmations` deep, and skip `removed` logs. A reorg deeper than `confirmations` after we have credited is not handled; the ledger is append-only, so the fix would be a compensating reversal made by a person. **OPEN:** no alerting exists for this.
 
-## Deposit addresses (`PgDepositAddresses`)
+## Deposit addresses (`DepositAddressRepository`)
 
 Table `deposit_address(chain, address, card_id, derivation_index)`, primary key `(chain, address)`.
 

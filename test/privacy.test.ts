@@ -90,7 +90,7 @@ async function setup() {
     onEvent: (u: string, t: string, d: Record<string, unknown>) => dev?.onEvent(u, t, d) ?? Promise.resolve(),
     ...deps,
   } as unknown as CardholderContext);
-  dev = new DeveloperInteractor({ pool, app, allowLocalWebhooks: false, publicUrl: "https://cards.example", resolve: async () => ["93.184.216.34"] });
+  dev = new DeveloperInteractor({ developers: repos.developers, webhookEvents: repos.webhookEvents, app, allowLocalWebhooks: false, publicUrl: "https://cards.example", resolve: async () => ["93.184.216.34"] });
   return { pool, app, dev, f };
 }
 type S = Awaited<ReturnType<typeof setup>>;
