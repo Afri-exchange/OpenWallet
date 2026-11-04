@@ -85,7 +85,7 @@ async function setup() {
   const app = make();
   const OWN = "0x00000000000000000000000000000000000000aa";
   const checkoutFor = (a: CardholderInteractor, now?: () => Date, payoutAddressDelayMs = 0) =>
-    new CheckoutInteractor({ pool, ledger, app: a, publicUrl: "http://127.0.0.1:8787", now, payoutAddressDelayMs, isOwnAddress: async (x) => x === OWN });
+    new CheckoutInteractor({ merchants: repos.merchants, checkouts: repos.checkouts, payouts: repos.payouts, ledger, app: a, publicUrl: "http://127.0.0.1:8787", now, payoutAddressDelayMs, isOwnAddress: async (x) => x === OWN });
   const checkout = checkoutFor(app);
   const { userId } = await app.signup(`u${randomBytes(3).toString("hex")}@example.com`);
   await app.submitKyc(userId, KYC);
