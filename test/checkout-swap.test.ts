@@ -212,7 +212,7 @@ async function setup(cfg: Partial<SwapConfig> = {}, opts: { privacy?: boolean } 
   const filler = new FakeFiller();
   if (opts.privacy) filler.expectPan = ONE_TIME_PAN;
   const swap = new SwapInteractor({
-    pool, app, vault, filler, lifecycle, now: () => new Date(clock),
+    swaps: repos.swaps, app, vault, filler, lifecycle, now: () => new Date(clock),
     config: { enabled: true, maxAmountCents: 1_000, allowedHosts: ["checkout.stripe.com"], ...cfg },
   });
   const balance = () => ledger.balance(accounts.agent(p.cardId, a.agentId));
