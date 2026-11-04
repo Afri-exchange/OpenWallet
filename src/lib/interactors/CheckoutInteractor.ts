@@ -1,5 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
-import type pg from "pg";
+import type { CheckoutRepository } from "../../domain/repositories/CheckoutRepository.js";
+import type { MerchantRepository } from "../../domain/repositories/MerchantRepository.js";
+import type { PayoutRepository } from "../../domain/repositories/PayoutRepository.js";
+import type { Checkout, Merchant, Payout, Spend } from "../../domain/types/Entities.js";
 import { accounts, LedgerError, type Ledger } from "../services/Ledger.js";
 import { type AgentPrincipal, type PayRequest, type SpendView } from "./CardholderInteractor.js";
 import { badRequestError, conflictError, goneError, notFoundError } from "../../errors.js";
@@ -23,7 +26,9 @@ import { badRequestError, conflictError, goneError, notFoundError } from "../../
  */
 
 export interface CheckoutContext {
-  pool: pg.Pool;
+  merchants: MerchantRepository;
+  checkouts: CheckoutRepository;
+  payouts: PayoutRepository;
   ledger: Pick<Ledger, "balance" | "findByKey" | "settleCheckout" | "reservePayout" | "completePayout" | "releasePayout">;
   /** CardholderInteractor; checkout payments use its reserved "checkout:" keys (internal: true). */
   app: { pay(p: AgentPrincipal, req: PayRequest, opts: { internal: true }): Promise<SpendView> };
@@ -137,7 +142,6 @@ const MAX_METADATA_BYTES = 4_096;
 
 const hashKey = (t: string) => createHash("sha256").update(t).digest("hex");
 const spendKey = (checkoutId: string, attempt: number) => `checkout:${checkoutId}:${attempt}`;
-const num = (v: string | number | null) => (v === null ? 0 : Number(v));
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 function text(v: unknown, what: string, max: number): string {
@@ -174,30 +178,25 @@ export class CheckoutInteractor {
     const mcc = optMcc(body.mcc);
     const merchantId = `m_${randomBytes(6).toString("hex")}`;
     const secretKey = `mk_${randomBytes(32).toString("base64url")}`;
-    try {
-      await this.d.pool.query("INSERT INTO app_merchant (merchant_id, name, email, mcc, key_hash) VALUES ($1, $2, $3, $4, $5)", [merchantId, name, email, mcc ?? null, hashKey(secretKey)]);
-    } catch (e) {
-      if ((e as { code?: string }).code === "23505") throw conflictError("that email already has a merchant account");
-      throw e;
-    }
+    const created = await this.d.merchants.create({ merchantId, name, email, mcc: mcc ?? null, keyHash: hashKey(secretKey) });
+    if (!created) throw conflictError("that email already has a merchant account");
     return { merchantId, name, secretKey };
   }
 
-  async merchantByKey(key: string): Promise<string | undefined> {
-    const r = await this.d.pool.query("SELECT merchant_id FROM app_merchant WHERE key_hash = $1", [hashKey(key)]);
-    return r.rows[0]?.merchant_id;
+  merchantByKey(key: string): Promise<string | undefined> {
+    return this.d.merchants.findIdByKeyHash(hashKey(key));
   }
 
   /** Replaces the merchant's secret key; the old one stops working at once. */
   async rotateMerchantKey(merchantId: string): Promise<{ secretKey: string }> {
     const secretKey = `mk_${randomBytes(32).toString("base64url")}`;
-    await this.d.pool.query("UPDATE app_merchant SET key_hash = $2 WHERE merchant_id = $1", [merchantId, hashKey(secretKey)]);
+    await this.d.merchants.updateKeyHash(merchantId, hashKey(secretKey));
     return { secretKey };
   }
 
   async merchantProfile(merchantId: string): Promise<MerchantProfile> {
     const m = await this.merchant(merchantId);
-    return { merchantId, name: m.name, email: m.email, mcc: m.mcc, payoutAddress: m.payout_address, payoutAddressUsableFrom: this.usableFrom(m)?.toISOString() ?? null };
+    return { merchantId, name: m.name, email: m.email, mcc: m.mcc, payoutAddress: m.payoutAddress, payoutAddressUsableFrom: this.usableFrom(m)?.toISOString() ?? null };
   }
 
   /**
@@ -211,17 +210,14 @@ export class CheckoutInteractor {
     if (!/^0x[0-9a-f]{40}$/.test(address)) throw badRequestError("address must be a 0x-prefixed EVM address");
     if (/^0x0{40}$/.test(address)) throw badRequestError("address cannot be the zero address");
     if (await this.d.isOwnAddress?.(address)) throw badRequestError("that address belongs to Agent Cards; use your own wallet");
-    await this.d.pool.query(
-      "UPDATE app_merchant SET payout_address = $2, payout_address_set_at = $3 WHERE merchant_id = $1 AND payout_address IS DISTINCT FROM $2",
-      [merchantId, address, this.now()],
-    );
+    await this.d.merchants.setPayoutAddress(merchantId, address, this.now());
     this.log(`merchant ${merchantId}: payout address set to ${address}`);
     return this.merchantProfile(merchantId);
   }
 
-  private usableFrom(m: Record<string, any>): Date | undefined {
-    if (!m.payout_address_set_at) return undefined;
-    return new Date((m.payout_address_set_at as Date).getTime() + (this.d.payoutAddressDelayMs ?? DEFAULT_PAYOUT_ADDRESS_DELAY_MS));
+  private usableFrom(m: Merchant): Date | undefined {
+    if (!m.payoutAddressSetAt) return undefined;
+    return new Date(m.payoutAddressSetAt.getTime() + (this.d.payoutAddressDelayMs ?? DEFAULT_PAYOUT_ADDRESS_DELAY_MS));
   }
 
   // ---------- merchant balance and payouts ----------
@@ -245,25 +241,24 @@ export class CheckoutInteractor {
     if (typeof amountCents !== "number" || !Number.isSafeInteger(amountCents) || amountCents <= 0) throw badRequestError("amountCents must be a positive whole number of cents");
     const key = optText(body.idempotencyKey, "idempotencyKey", 100);
     if (key) {
-      const prior = (await this.d.pool.query("SELECT * FROM app_payout WHERE merchant_id = $1 AND idempotency_key = $2", [merchantId, key])).rows[0];
+      const prior = await this.d.payouts.findByIdempotencyKey(merchantId, key);
       if (prior) {
-        if (num(prior.amount_cents) !== amountCents) throw conflictError("that idempotency key was already used for a different payout");
+        if (prior.amountCents !== amountCents) throw conflictError("that idempotency key was already used for a different payout");
         return payoutRow(prior);
       }
     }
-    if (!m.payout_address) throw conflictError("set a payout address first (POST /merchant/v1/payout-address)");
+    if (!m.payoutAddress) throw conflictError("set a payout address first (POST /merchant/v1/payout-address)");
     const from = this.usableFrom(m)!;
     if (this.now() < from) throw conflictError(`your payout address was changed recently; payouts to it are allowed from ${from.toISOString()}`);
     const payoutId = `po_${randomBytes(12).toString("hex")}`;
-    try {
-      // The row first, so a crash after the reservation leaves a payout ops can see.
-      await this.d.pool.query(
-        "INSERT INTO app_payout (payout_id, merchant_id, amount_cents, status, idempotency_key, destination, chain) VALUES ($1, $2, $3, 'requested', $4, $5, $6)",
-        [payoutId, merchantId, amountCents, key ?? null, m.payout_address, PAYOUT_CHAIN],
-      );
-    } catch (e) {
-      if ((e as { code?: string }).code === "23505" && key) return this.requestPayout(merchantId, body);
-      throw e;
+    // The row first, so a crash after the reservation leaves a payout ops can see.
+    const created = await this.d.payouts.createRequested({
+      payoutId, merchantId, amountCents, idempotencyKey: key ?? null, destination: m.payoutAddress, chain: PAYOUT_CHAIN,
+    });
+    if (!created) {
+      // The same key, requested concurrently: answer from that payout.
+      if (key) return this.requestPayout(merchantId, body);
+      throw new Error(`payout ${payoutId}: unique constraint hit without an idempotency key`);
     }
     try {
       await this.d.ledger.reservePayout({ merchantId, amountCents, payoutId });
@@ -271,18 +266,17 @@ export class CheckoutInteractor {
       // Failed only if nothing was reserved; a reservation that committed before the error stands.
       if (!(await this.d.ledger.findByKey(`payout-reserve:${payoutId}`))) {
         const short = e instanceof LedgerError && /insufficient/.test(e.message);
-        await this.d.pool.query("UPDATE app_payout SET status = 'failed', failure = $2, updated_at = now() WHERE payout_id = $1 AND status = 'requested'", [payoutId, short ? "insufficient balance" : "could not reserve funds"]);
+        await this.d.payouts.failRequested(payoutId, short ? "insufficient balance" : "could not reserve funds");
         if (short) throw conflictError("payout is more than the available balance");
       }
       throw e;
     }
-    this.log(`payout ${payoutId}: ${amountCents}c reserved for ${merchantId}, to ${m.payout_address}`);
-    return payoutRow((await this.d.pool.query("SELECT * FROM app_payout WHERE payout_id = $1", [payoutId])).rows[0]);
+    this.log(`payout ${payoutId}: ${amountCents}c reserved for ${merchantId}, to ${m.payoutAddress}`);
+    return payoutRow((await this.d.payouts.find(payoutId))!);
   }
 
   async listPayouts(merchantId: string, limit = 20): Promise<PayoutView[]> {
-    const r = await this.d.pool.query("SELECT * FROM app_payout WHERE merchant_id = $1 ORDER BY created_at DESC LIMIT $2", [merchantId, Math.min(Math.max(1, limit), 100)]);
-    return r.rows.map(payoutRow);
+    return (await this.d.payouts.listByMerchant(merchantId, Math.min(Math.max(1, limit), 100))).map(payoutRow);
   }
 
   /**
@@ -296,27 +290,23 @@ export class CheckoutInteractor {
     outcome: { sent: true; railReference?: string } | { sent: false; failure: string },
     opts: { fromRail?: boolean; afterReview?: boolean } = {},
   ): Promise<PayoutView> {
-    const p = (await this.d.pool.query("SELECT * FROM app_payout WHERE payout_id = $1", [payoutId])).rows[0];
+    const p = await this.d.payouts.find(payoutId);
     if (!p) throw notFoundError("payout not found");
     const target = outcome.sent ? "sent" : "failed";
-    const args = { merchantId: p.merchant_id as string, amountCents: num(p.amount_cents), payoutId };
+    const args = { merchantId: p.merchantId, amountCents: p.amountCents, payoutId };
     const reserved = !!(await this.d.ledger.findByKey(`payout-reserve:${payoutId}`));
     if (outcome.sent && !reserved) throw conflictError("no funds are reserved for this payout");
     // Claim the row BEFORE moving money, so ops and the sender can never both act on it: whoever claims first
     // wins. Ops may only settle a payout nothing has been broadcast for. A broadcast transfer may still be mined,
     // so only the chain's answer (fromRail) settles it, or a person after review (afterReview, needs_review set).
-    const from = opts.fromRail ? "status = 'sending'" : opts.afterReview ? "status = 'sending' AND needs_review IS NOT NULL" : "status = 'requested'";
-    const claimed = outcome.sent
-      ? await this.d.pool.query(
-          `UPDATE app_payout SET status = 'sent', rail_reference = COALESCE($2, rail_reference), updated_at = now() WHERE payout_id = $1 AND ${from} RETURNING *`,
-          [payoutId, outcome.railReference ?? null],
-        )
-      : await this.d.pool.query(
-          `UPDATE app_payout SET status = 'failed', failure = $2, updated_at = now() WHERE payout_id = $1 AND ${from} RETURNING *`,
-          [payoutId, outcome.failure.slice(0, 300)],
-        );
-    if (!claimed.rowCount) {
-      const now = (await this.d.pool.query("SELECT status FROM app_payout WHERE payout_id = $1", [payoutId])).rows[0];
+    const from = opts.fromRail ? "sending" : opts.afterReview ? "sending-under-review" : "requested";
+    const claimed = await this.d.payouts.claimSettlement(
+      payoutId,
+      from,
+      outcome.sent ? { sent: true, ...(outcome.railReference != null ? { railReference: outcome.railReference } : {}) } : { sent: false, failure: outcome.failure.slice(0, 300) },
+    );
+    if (!claimed) {
+      const now = await this.d.payouts.find(payoutId);
       // The same terminal status again is a retry: fall through to finish the ledger step (idempotent by key).
       if (now?.status !== target) {
         if (now?.status === "sending") {
@@ -329,7 +319,7 @@ export class CheckoutInteractor {
     // settlePayout again with the same outcome finishes it.
     if (outcome.sent) await this.d.ledger.completePayout(args);
     else if (reserved || (await this.d.ledger.findByKey(`payout-reserve:${payoutId}`))) await this.d.ledger.releasePayout(args);
-    return payoutRow((await this.d.pool.query("SELECT * FROM app_payout WHERE payout_id = $1", [payoutId])).rows[0]);
+    return payoutRow((await this.d.payouts.find(payoutId))!);
   }
 
   // ---------- checkouts (merchant side) ----------
@@ -349,10 +339,10 @@ export class CheckoutInteractor {
       metadata = body.metadata as Record<string, unknown>;
     }
     const key = optText(body.idempotencyKey, "idempotencyKey", 100);
-    const same = (c: Record<string, any>) =>
-      num(c.amount_cents) === amountCents && c.description === description && (c.reference ?? undefined) === reference && (c.mcc ?? undefined) === mcc;
+    const same = (c: Checkout) =>
+      c.amountCents === amountCents && c.description === description && (c.reference ?? undefined) === reference && (c.mcc ?? undefined) === mcc;
     if (key) {
-      const prior = (await this.d.pool.query("SELECT * FROM app_checkout WHERE merchant_id = $1 AND idempotency_key = $2", [merchantId, key])).rows[0];
+      const prior = await this.d.checkouts.findByIdempotencyKey(merchantId, key);
       if (prior) {
         if (!same(prior)) throw conflictError("that idempotency key was already used for a different checkout");
         return this.merchantView(prior);
@@ -360,47 +350,37 @@ export class CheckoutInteractor {
     }
     const checkoutId = `cs_${randomBytes(16).toString("hex")}`;
     const expiresAt = new Date(this.now().getTime() + ttl * 1000);
-    try {
-      const r = await this.d.pool.query(
-        `INSERT INTO app_checkout (checkout_id, merchant_id, amount_cents, description, reference, mcc, metadata, idempotency_key, status, expires_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'open', $9) RETURNING *`,
-        [checkoutId, merchantId, amountCents, description, reference ?? null, mcc ?? null, metadata, key ?? null, expiresAt],
-      );
-      return this.merchantView(r.rows[0]);
-    } catch (e) {
-      if ((e as { code?: string }).code === "23505" && key) {
-        // The same key, created concurrently.
-        const prior = (await this.d.pool.query("SELECT * FROM app_checkout WHERE merchant_id = $1 AND idempotency_key = $2", [merchantId, key])).rows[0];
-        if (prior && same(prior)) return this.merchantView(prior);
-        throw conflictError("that idempotency key was already used for a different checkout");
-      }
-      throw e;
-    }
+    const created = await this.d.checkouts.createOpen({
+      checkoutId, merchantId, amountCents, description, reference: reference ?? null, mcc: mcc ?? null, metadata, idempotencyKey: key ?? null, expiresAt,
+    });
+    if (created) return this.merchantView(created);
+    if (!key) throw new Error(`checkout ${checkoutId}: unique constraint hit without an idempotency key`);
+    // The same key, created concurrently.
+    const prior = await this.d.checkouts.findByIdempotencyKey(merchantId, key);
+    if (prior && same(prior)) return this.merchantView(prior);
+    throw conflictError("that idempotency key was already used for a different checkout");
   }
 
   async getForMerchant(merchantId: string, checkoutId: string): Promise<MerchantCheckoutView> {
     await this.syncOne(checkoutId);
-    const c = await this.row(checkoutId);
-    if (!c || c.merchant_id !== merchantId) throw notFoundError("checkout not found");
+    const c = await this.d.checkouts.find(checkoutId);
+    if (!c || c.merchantId !== merchantId) throw notFoundError("checkout not found");
     return this.merchantView(c);
   }
 
   async list(merchantId: string, limit = 20): Promise<MerchantCheckoutView[]> {
     await this.expire();
-    const r = await this.d.pool.query("SELECT * FROM app_checkout WHERE merchant_id = $1 ORDER BY created_at DESC LIMIT $2", [merchantId, Math.min(Math.max(1, limit), 100)]);
-    return Promise.all(r.rows.map((c) => this.merchantView(c)));
+    const rows = await this.d.checkouts.listByMerchant(merchantId, Math.min(Math.max(1, limit), 100));
+    return Promise.all(rows.map((c) => this.merchantView(c)));
   }
 
   /** Only an open checkout can be canceled; one being paid or paid cannot. */
   async cancel(merchantId: string, checkoutId: string): Promise<MerchantCheckoutView> {
     await this.expire();
-    const r = await this.d.pool.query(
-      "UPDATE app_checkout SET status = 'canceled', updated_at = now() WHERE checkout_id = $1 AND merchant_id = $2 AND status = 'open' RETURNING *",
-      [checkoutId, merchantId],
-    );
-    if (r.rows[0]) return this.merchantView(r.rows[0]);
-    const c = await this.row(checkoutId);
-    if (!c || c.merchant_id !== merchantId) throw notFoundError("checkout not found");
+    const canceled = await this.d.checkouts.cancelIfOpen(checkoutId, merchantId);
+    if (canceled) return this.merchantView(canceled);
+    const c = await this.d.checkouts.find(checkoutId);
+    if (!c || c.merchantId !== merchantId) throw notFoundError("checkout not found");
     if (c.status === "canceled") return this.merchantView(c);
     throw conflictError(`checkout is ${c.status} and cannot be canceled`);
   }
@@ -409,7 +389,7 @@ export class CheckoutInteractor {
 
   async getPublic(checkoutId: string): Promise<PublicCheckoutView> {
     await this.syncOne(checkoutId);
-    const c = await this.row(checkoutId);
+    const c = await this.d.checkouts.find(checkoutId);
     if (!c) throw notFoundError("checkout not found");
     return this.publicView(c);
   }
@@ -435,43 +415,39 @@ export class CheckoutInteractor {
 
   private async doPay(p: AgentPrincipal, checkoutId: string, maxAmountCents?: number): Promise<CheckoutPayResult> {
     await this.expire();
-    const mine = (c: Record<string, any>) => c.card_id === p.cardId && c.agent_id === p.agentId;
-    let c = await this.row(checkoutId);
-    if (c && maxAmountCents !== undefined && num(c.amount_cents) > maxAmountCents) {
-      throw conflictError(`checkout costs ${num(c.amount_cents)} cents, more than the ${maxAmountCents} you allowed; nothing was charged`);
+    const mine = (c: Checkout) => c.cardId === p.cardId && c.agentId === p.agentId;
+    let c = await this.d.checkouts.find(checkoutId);
+    if (c && maxAmountCents !== undefined && c.amountCents > maxAmountCents) {
+      throw conflictError(`checkout costs ${c.amountCents} cents, more than the ${maxAmountCents} you allowed; nothing was charged`);
     }
     // Two rounds at most: a lost claim race re-reads the row once and then answers from its state.
     for (let round = 0; ; round++) {
       if (!c) throw notFoundError("checkout not found");
       if (c.status === "paid") {
         if (!mine(c)) throw conflictError("this checkout was already paid");
-        return { checkout: await this.publicView(c), payment: await this.spendOf(c.spend_id) };
+        return { checkout: await this.publicView(c), payment: await this.spendOf(c.spendId!) };
       }
       if (c.status === "canceled" || c.status === "expired") throw goneError(`checkout is ${c.status}`);
       if (c.status === "processing") {
         if (!mine(c)) throw conflictError("another agent is paying this checkout");
         break; // resume this agent's attempt: pay() returns the existing payment for its key
       }
-      const claimed = await this.d.pool.query(
-        `UPDATE app_checkout SET status = 'processing', card_id = $2, agent_id = $3, attempt = attempt + 1, claimed_at = $4, spend_id = NULL, updated_at = now()
-         WHERE checkout_id = $1 AND status = 'open' AND expires_at > $4 RETURNING *`,
-        [checkoutId, p.cardId, p.agentId, this.now()],
-      );
-      if (claimed.rows[0]) {
-        c = claimed.rows[0];
+      const claimed = await this.d.checkouts.claim(checkoutId, { cardId: p.cardId, agentId: p.agentId }, this.now());
+      if (claimed) {
+        c = claimed;
         break;
       }
       if (round > 0) throw conflictError("checkout changed while paying; try again");
       await this.expire();
-      c = await this.row(checkoutId);
+      c = await this.d.checkouts.find(checkoutId);
     }
     const checkout = c!;
-    const merchant = await this.merchant(checkout.merchant_id);
+    const merchant = await this.merchant(checkout.merchantId);
     const key = spendKey(checkoutId, checkout.attempt);
     let payment: SpendView;
     try {
       payment = await this.d.app.pay(p, {
-        amountCents: num(checkout.amount_cents),
+        amountCents: checkout.amountCents,
         merchant: merchant.name,
         mcc: checkout.mcc ?? merchant.mcc ?? undefined,
         idempotencyKey: key,
@@ -484,64 +460,50 @@ export class CheckoutInteractor {
       throw e;
     }
     const after = await this.apply(checkout, payment, merchant.name);
-    return { checkout: await this.publicView(after ?? (await this.row(checkoutId))!), payment };
+    return { checkout: await this.publicView(after ?? (await this.d.checkouts.find(checkoutId))!), payment };
   }
 
   // ---------- settling ----------
 
   /** Moves a claimed checkout to where its payment went. Guarded on the attempt, so a stale answer changes nothing. */
-  private async apply(c: Record<string, any>, s: SpendView, merchantName: string): Promise<Record<string, any> | undefined> {
-    const id = c.checkout_id as string;
+  private async apply(c: Checkout, s: SpendView, merchantName: string): Promise<Checkout | undefined> {
+    const id = c.checkoutId;
     // Defence in depth: only a spend for exactly this checkout's price and merchant can pay it.
-    if (s.amountCents !== num(c.amount_cents) || s.merchant !== merchantName) {
+    if (s.amountCents !== c.amountCents || s.merchant !== merchantName) {
       const note = `needs review: payment ${s.spendId} (${s.amountCents}c to ${s.merchant}) does not match this checkout`;
-      await this.d.pool.query("UPDATE app_checkout SET needs_review = $3, updated_at = now() WHERE checkout_id = $1 AND attempt = $2", [id, c.attempt, note]);
+      await this.d.checkouts.flagForReview(id, note, c.attempt);
       this.log(`checkout ${id}: ${note}`);
       return undefined;
     }
     if (s.status === "approved") {
-      const r = await this.d.pool.query(
-        "UPDATE app_checkout SET status = 'paid', spend_id = $3, paid_at = $4, last_error = NULL, updated_at = now() WHERE checkout_id = $1 AND attempt = $2 AND status = 'processing' RETURNING *",
-        [id, c.attempt, s.spendId, this.now()],
-      );
-      if (!r.rows[0]) {
+      const paid = await this.d.checkouts.markPaid(id, c.attempt, s.spendId, this.now());
+      if (!paid) {
         // A stalled claim was released and someone else paid: one item, two charges. Visible to the merchant and ops.
         const note = `needs review: payment ${s.spendId} (attempt ${c.attempt}) was approved after the checkout moved on`;
-        await this.d.pool.query("UPDATE app_checkout SET needs_review = $2, updated_at = now() WHERE checkout_id = $1", [id, note]);
+        await this.d.checkouts.flagForReview(id, note);
         this.log(`checkout ${id}: ${note}`);
         return undefined;
       }
       // Only the attempt that moved the checkout to paid credits the merchant. A failure here is retried by sync.
       try {
-        return (await this.settle(r.rows[0])) ?? r.rows[0];
+        return (await this.settle(paid)) ?? paid;
       } catch (e) {
         this.log(`checkout ${id}: settle: ${errText(e)}`);
-        return r.rows[0];
+        return paid;
       }
     }
-    if (s.status === "processing") {
-      const r = await this.d.pool.query(
-        "UPDATE app_checkout SET spend_id = $3, updated_at = now() WHERE checkout_id = $1 AND attempt = $2 AND status = 'processing' RETURNING *",
-        [id, c.attempt, s.spendId],
-      );
-      return r.rows[0];
-    }
+    if (s.status === "processing") return this.d.checkouts.attachSpend(id, c.attempt, s.spendId);
     return this.release(id, c.attempt, s.reason ?? s.status);
   }
 
   /** Credits the merchant for a paid checkout. Idempotent: the ledger key is per checkout. */
-  private async settle(c: Record<string, any>): Promise<Record<string, any> | undefined> {
-    const tx = await this.d.ledger.settleCheckout({ merchantId: c.merchant_id, checkoutId: c.checkout_id, amountCents: num(c.amount_cents) });
-    const r = await this.d.pool.query("UPDATE app_checkout SET settled_seq = $2, updated_at = now() WHERE checkout_id = $1 AND status = 'paid' RETURNING *", [c.checkout_id, tx.seq]);
-    return r.rows[0];
+  private async settle(c: Checkout): Promise<Checkout | undefined> {
+    const tx = await this.d.ledger.settleCheckout({ merchantId: c.merchantId, checkoutId: c.checkoutId, amountCents: c.amountCents });
+    return this.d.checkouts.recordSettlement(c.checkoutId, tx.seq);
   }
 
-  private async release(checkoutId: string, attempt: number, why: string): Promise<Record<string, any> | undefined> {
-    const r = await this.d.pool.query(
-      "UPDATE app_checkout SET status = 'open', card_id = NULL, agent_id = NULL, spend_id = NULL, claimed_at = NULL, last_error = $3, updated_at = now() WHERE checkout_id = $1 AND attempt = $2 AND status = 'processing' RETURNING *",
-      [checkoutId, attempt, why.slice(0, 300)],
-    );
-    return r.rows[0];
+  private release(checkoutId: string, attempt: number, why: string): Promise<Checkout | undefined> {
+    return this.d.checkouts.release(checkoutId, attempt, why.slice(0, 300));
   }
 
   /**
@@ -555,11 +517,9 @@ export class CheckoutInteractor {
 
   private async doSync(): Promise<void> {
     await this.expire();
-    const rows = (await this.d.pool.query("SELECT checkout_id FROM app_checkout WHERE status = 'processing' ORDER BY claimed_at LIMIT 200")).rows;
-    for (const r of rows) await this.syncOne(r.checkout_id).catch((e) => this.log(`checkout ${r.checkout_id}: sync: ${errText(e)}`));
+    for (const id of await this.d.checkouts.findProcessingIds(200)) await this.syncOne(id).catch((e) => this.log(`checkout ${id}: sync: ${errText(e)}`));
     // Paid but not yet credited to the merchant (a crash or error between the two).
-    const unsettled = (await this.d.pool.query("SELECT * FROM app_checkout WHERE status = 'paid' AND settled_seq IS NULL ORDER BY paid_at LIMIT 200")).rows;
-    for (const c of unsettled) await this.settle(c).catch((e) => this.log(`checkout ${c.checkout_id}: settle: ${errText(e)}`));
+    for (const c of await this.d.checkouts.findUnsettled(200)) await this.settle(c).catch((e) => this.log(`checkout ${c.checkoutId}: settle: ${errText(e)}`));
     await this.finishPayouts();
   }
 
@@ -569,31 +529,23 @@ export class CheckoutInteractor {
    * Only rows with a reservation and no closing entry are touched.
    */
   private async finishPayouts(): Promise<void> {
-    const stuck = (
-      await this.d.pool.query(
-        `SELECT p.* FROM app_payout p
-         WHERE p.status IN ('sent', 'failed')
-           AND EXISTS (SELECT 1 FROM ledger_tx WHERE idempotency_key = 'payout-reserve:' || p.payout_id)
-           AND NOT EXISTS (SELECT 1 FROM ledger_tx WHERE idempotency_key IN ('payout-complete:' || p.payout_id, 'payout-release:' || p.payout_id))
-         ORDER BY p.updated_at LIMIT 100`,
-      )
-    ).rows;
-    for (const p of stuck) {
+    for (const p of await this.d.payouts.findUnfinishedSettlements(100)) {
       const outcome = p.status === "sent"
-        ? ({ sent: true, railReference: p.rail_reference ?? undefined } as const)
+        ? ({ sent: true, railReference: p.railReference ?? undefined } as const)
         : ({ sent: false, failure: p.failure ?? "payout failed" } as const);
-      await this.settlePayout(p.payout_id, outcome).catch((e) => this.log(`payout ${p.payout_id}: finish: ${errText(e)}`));
+      await this.settlePayout(p.payoutId, outcome).catch((e) => this.log(`payout ${p.payoutId}: finish: ${errText(e)}`));
     }
   }
 
   private async syncOne(checkoutId: string): Promise<void> {
     if (this.paying.has(checkoutId)) return;
-    const c = await this.row(checkoutId);
+    const c = await this.d.checkouts.find(checkoutId);
     if (!c || c.status !== "processing") return;
-    const s = await this.spendByKey(c.card_id, c.agent_id, spendKey(checkoutId, c.attempt));
+    // Processing always has an agent (CHECK app_checkout_check) and its card.
+    const s = await this.spendByKey(c.cardId!, c.agentId!, spendKey(checkoutId, c.attempt));
     if (s) {
-      await this.apply(c, s, (await this.merchant(c.merchant_id)).name);
-    } else if (this.now().getTime() - new Date(c.claimed_at).getTime() > STALE_CLAIM_MS) {
+      await this.apply(c, s, (await this.merchant(c.merchantId)).name);
+    } else if (this.now().getTime() - new Date(c.claimedAt!).getTime() > STALE_CLAIM_MS) {
       await this.release(checkoutId, c.attempt, "interrupted before payment; nothing was charged");
       this.log(`checkout ${checkoutId}: stale claim released`);
     }
@@ -601,67 +553,63 @@ export class CheckoutInteractor {
 
   /** Open checkouts past their time become expired. A processing one is left to finish. */
   private async expire(): Promise<void> {
-    await this.d.pool.query("UPDATE app_checkout SET status = 'expired', updated_at = now() WHERE status = 'open' AND expires_at <= $1", [this.now()]);
+    await this.d.checkouts.expireOpen(this.now());
   }
 
   // ---------- helpers ----------
 
-  private async row(checkoutId: string): Promise<Record<string, any> | undefined> {
-    return (await this.d.pool.query("SELECT * FROM app_checkout WHERE checkout_id = $1", [checkoutId])).rows[0];
-  }
-
-  private async merchant(merchantId: string) {
-    const m = (await this.d.pool.query("SELECT * FROM app_merchant WHERE merchant_id = $1", [merchantId])).rows[0];
+  private async merchant(merchantId: string): Promise<Merchant> {
+    const m = await this.d.merchants.find(merchantId);
     if (!m) throw notFoundError("merchant not found");
     return m;
   }
 
   private async spendByKey(cardId: string, agentId: string, key: string): Promise<SpendView | undefined> {
-    const s = (await this.d.pool.query("SELECT * FROM app_spend WHERE card_id = $1 AND agent_id = $2 AND idempotency_key = $3", [cardId, agentId, key])).rows[0];
+    const s = await this.d.checkouts.findSpendByKey(cardId, agentId, key);
     return s ? spendRow(s) : undefined;
   }
 
   private async spendOf(spendId: string): Promise<SpendView> {
-    return spendRow((await this.d.pool.query("SELECT * FROM app_spend WHERE spend_id = $1", [spendId])).rows[0]);
+    return spendRow((await this.d.checkouts.findSpend(spendId))!);
   }
 
-  private async merchantView(c: Record<string, any>): Promise<MerchantCheckoutView> {
+  private async merchantView(c: Checkout): Promise<MerchantCheckoutView> {
     let payment: MerchantCheckoutView["payment"] = null;
-    let underReview: string | null = c.needs_review ? "payment under review; do not fulfil" : null;
-    if (c.spend_id) {
-      const s = (await this.d.pool.query("SELECT status, reason FROM app_spend WHERE spend_id = $1", [c.spend_id])).rows[0];
-      if (s) payment = { paymentId: c.spend_id, status: s.status };
+    let underReview: string | null = c.needsReview ? "payment under review; do not fulfil" : null;
+    if (c.spendId) {
+      const s = await this.d.checkouts.findSpend(c.spendId);
+      if (s) payment = { paymentId: c.spendId, status: s.status };
       if (s?.status === "processing" && /^needs review/.test(s.reason ?? "")) underReview ??= "payment under review: the card network has not confirmed it yet; do not fulfil";
     }
     return {
-      checkoutId: c.checkout_id,
+      checkoutId: c.checkoutId,
       status: c.status,
-      amountCents: num(c.amount_cents),
+      amountCents: c.amountCents,
       currency: "USD",
       description: c.description,
       reference: c.reference,
       mcc: c.mcc,
       metadata: c.metadata,
-      checkoutUrl: this.urlOf(c.checkout_id),
-      expiresAt: (c.expires_at as Date).toISOString(),
-      paidAt: c.paid_at ? (c.paid_at as Date).toISOString() : null,
-      createdAt: (c.created_at as Date).toISOString(),
+      checkoutUrl: this.urlOf(c.checkoutId),
+      expiresAt: c.expiresAt.toISOString(),
+      paidAt: c.paidAt ? c.paidAt.toISOString() : null,
+      createdAt: c.createdAt.toISOString(),
       payment,
-      lastAttempt: c.status === "open" && c.last_error ? "failed" : null,
+      lastAttempt: c.status === "open" && c.lastError ? "failed" : null,
       underReview,
     };
   }
 
-  private async publicView(c: Record<string, any>): Promise<PublicCheckoutView> {
-    const m = await this.merchant(c.merchant_id);
+  private async publicView(c: Checkout): Promise<PublicCheckoutView> {
+    const m = await this.merchant(c.merchantId);
     return {
-      checkoutId: c.checkout_id,
+      checkoutId: c.checkoutId,
       merchant: m.name,
       description: c.description,
-      amountCents: num(c.amount_cents),
+      amountCents: c.amountCents,
       currency: "USD",
       status: c.status,
-      expiresAt: (c.expires_at as Date).toISOString(),
+      expiresAt: c.expiresAt.toISOString(),
     };
   }
 
@@ -670,28 +618,28 @@ export class CheckoutInteractor {
   }
 }
 
-function spendRow(s: Record<string, unknown>): SpendView {
+function spendRow(s: Spend): SpendView {
   return {
-    spendId: s.spend_id as string,
-    amountCents: num(s.amount_cents as string),
-    merchant: s.merchant as string,
-    mcc: (s.mcc as string | null) ?? null,
-    status: s.status as SpendView["status"],
-    reason: (s.reason as string | null) ?? null,
-    createdAt: (s.created_at as Date).toISOString(),
+    spendId: s.spendId,
+    amountCents: s.amountCents,
+    merchant: s.merchant,
+    mcc: s.mcc ?? null,
+    status: s.status,
+    reason: s.reason ?? null,
+    createdAt: s.createdAt.toISOString(),
   };
 }
 
-function payoutRow(p: Record<string, any>): PayoutView {
+function payoutRow(p: Payout): PayoutView {
   return {
-    payoutId: p.payout_id,
-    amountCents: num(p.amount_cents),
+    payoutId: p.payoutId,
+    amountCents: p.amountCents,
     currency: "USD",
     status: p.status,
     chain: p.chain ?? null,
     destination: p.destination ?? null,
-    txHash: p.rail_reference ?? null,
+    txHash: p.railReference ?? null,
     failure: p.failure ?? null,
-    createdAt: (p.created_at as Date).toISOString(),
+    createdAt: p.createdAt.toISOString(),
   };
 }

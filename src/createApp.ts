@@ -38,7 +38,8 @@ export function createApp(p: AppParams): AgentCardsApp & Required<Pick<AgentCard
   });
   developers = new DeveloperInteractor({ developers: p.repos.developers, webhookEvents: p.repos.webhookEvents, app: cardholders, allowLocalWebhooks: p.allowLocalWebhooks, publicUrl: p.publicUrl, log: p.log });
   const checkouts = new CheckoutInteractor({
-    pool: p.pool, ledger: p.ledger, app: cardholders, publicUrl: p.publicUrl, log: p.log,
+    merchants: p.repos.merchants, checkouts: p.repos.checkouts, payouts: p.repos.payouts,
+    ledger: p.ledger, app: cardholders, publicUrl: p.publicUrl, log: p.log,
     payoutAddressDelayMs: p.payoutAddressDelayMs, isOwnAddress: p.isOwnAddress,
   });
   const swaps = p.swapConfig.enabled && p.vault
