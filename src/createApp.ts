@@ -34,7 +34,7 @@ export function createApp(p: AppParams): AgentCardsApp & Required<Pick<AgentCard
     ...(p.depositRail ? { depositRail: p.depositRail } : {}),
     onEvent: (userId, type, data) => developers?.onEvent(userId, type, data) ?? Promise.resolve(),
   });
-  developers = new DeveloperInteractor({ pool: p.pool, app: cardholders, allowLocalWebhooks: p.allowLocalWebhooks, publicUrl: p.publicUrl, log: p.log });
+  developers = new DeveloperInteractor({ developers: p.repos.developers, webhookEvents: p.repos.webhookEvents, app: cardholders, allowLocalWebhooks: p.allowLocalWebhooks, publicUrl: p.publicUrl, log: p.log });
   const checkouts = new CheckoutInteractor({
     pool: p.pool, ledger: p.ledger, app: cardholders, publicUrl: p.publicUrl, log: p.log,
     payoutAddressDelayMs: p.payoutAddressDelayMs, isOwnAddress: p.isOwnAddress,
