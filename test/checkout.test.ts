@@ -313,7 +313,7 @@ test("settlement: a charge approved after its checkout moved on is not credited 
   assert.equal((await s.checkout.pay(y.p, c.checkoutId)).checkout.status, "paid"); // attempt 2
   // x's process wakes up and its attempt-1 charge comes back approved.
   const late = { spendId: "sp_late", amountCents: 700, merchant: "Acme API", mcc: "5734", status: "approved" as const, reason: null, createdAt: new Date().toISOString() };
-  await (s.checkout as unknown as { apply: (c: object, sp: object, m: string) => Promise<unknown> }).apply({ checkout_id: c.checkoutId, merchant_id: mid, attempt: 1, amount_cents: "700" }, late, "Acme API");
+  await (s.checkout as unknown as { apply: (c: object, sp: object, m: string) => Promise<unknown> }).apply({ checkoutId: c.checkoutId, merchantId: mid, attempt: 1, amountCents: 700 }, late, "Acme API");
   await s.checkout.sync();
   assert.equal((await s.checkout.balance(mid)).availableCents, 700, "credited for one charge, not two");
   assert.ok((await s.checkout.getForMerchant(mid, c.checkoutId)).underReview);

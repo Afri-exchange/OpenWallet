@@ -12,7 +12,7 @@
     "dev:up": "scripts/sandbox-up.sh",
     "dev:keys": "tsx scripts/dev-quickstart.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test test/*.test.ts",
+    "test": "tsx --test --test-concurrency=4 test/*.test.ts",
     "swap:rehearse": "tsx scripts/swap-rehearsal.ts",
     "swap:sandbox-e2e": "tsx scripts/swap-sandbox-e2e.ts",
     "swap:live-test": "tsx scripts/swap-live-test.ts",
