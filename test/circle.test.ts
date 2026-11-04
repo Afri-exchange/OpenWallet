@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, privateDecrypt, sign, constants } from "node:crypto";
-import { CircleClient, CircleDeposits, CircleError, usdcToBaseUnits, uuidFrom, type CircleTx } from "../src/chain/circle.js";
-import { BASE_SEPOLIA_USDC } from "../src/chain/base-usdc-watcher.js";
-import { Ledger, accounts } from "../src/ledger/ledger.js";
+import { CircleDeposits } from "../src/adapters/deposits/CircleDeposits.js";
+import { CircleClient, CircleError, usdcToBaseUnits, uuidFrom, type CircleTx } from "../src/lib/clients/circle/CircleClient.js";
+import { BASE_SEPOLIA_USDC } from "../src/adapters/deposits/BaseUsdcWatcher.js";
+import { Ledger, accounts } from "../src/lib/services/Ledger.js";
 
 const ec = generateKeyPairSync("ec", { namedCurve: "P-256" });
 const pub = ec.publicKey.export({ type: "spki", format: "der" }).toString("base64");

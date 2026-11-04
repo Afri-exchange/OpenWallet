@@ -3,15 +3,15 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import pg from "pg";
-import { AgentWallets } from "../src/agents/wallets.js";
-import { PgDepositAddresses } from "../src/chain/pg.js";
-import { DEFAULT_TIERS } from "../src/cards/tiers.js";
-import type { FundingRequest } from "../src/funding/types.js";
-import { Ledger } from "../src/ledger/ledger.js";
-import { PgStore } from "../src/ledger/pg-store.js";
-import { createAppServer } from "../src/app/server.js";
-import { AppService, type AppDeps } from "../src/app/service.js";
-import { DeveloperService, isPrivateAddress } from "../src/developers/service.js";
+import { AgentWallets } from "../src/lib/services/AgentWallets.js";
+import { PgDepositAddresses } from "../src/db/repositories/PgChainRepositories.js";
+import { DEFAULT_TIERS } from "../src/lib/services/tiers.js";
+import type { FundingRequest } from "../src/domain/interfaces/FundingSource.js";
+import { Ledger } from "../src/lib/services/Ledger.js";
+import { PgLedgerStore } from "../src/db/repositories/PgLedgerStore.js";
+import { createAppServer } from "../src/createHttpServer.js";
+import { CardholderInteractor, type CardholderContext } from "../src/lib/interactors/CardholderInteractor.js";
+import { DeveloperInteractor, isPrivateAddress } from "../src/lib/interactors/DeveloperInteractor.js";
 
 // Runs only with DATABASE_URL (each case gets its own schema). Miden is faked.
 const databaseUrl = process.env.DATABASE_URL;
@@ -38,8 +38,8 @@ async function setup(opts: { allowLocalWebhooks?: boolean; fetch?: typeof fetch;
   schemas.push(schema);
   const pool = new pg.Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 6 });
   pools.push(pool);
-  await new PgStore(pool).migrate();
-  const ledger = new Ledger(undefined, new PgStore(pool));
+  await new PgLedgerStore(pool).migrate();
+  const ledger = new Ledger(undefined, new PgLedgerStore(pool));
   let cards = 0;
   let clock = Date.now();
   const f = { kyc: "Approved" };
@@ -49,15 +49,15 @@ async function setup(opts: { allowLocalWebhooks?: boolean; fetch?: typeof fetch;
     cards: { issue: async (_a: string, policy: unknown) => ({ id: `card-${++cards}`, agentId: "x", policy }) },
     funding: { fund: async (_r: FundingRequest) => ({ id: "m1", status: "confirmed" as const }) },
   };
-  let dev: DeveloperService | undefined;
-  const app = new AppService({
+  let dev: DeveloperInteractor | undefined;
+  const app = new CardholderInteractor({
     pool, ledger, wallets: new AgentWallets(ledger), addresses: new PgDepositAddresses(pool, "base-sepolia"),
     deriveAddress: (i: number) => `0x${i.toString(16).padStart(40, "0")}`, tiers: DEFAULT_TIERS, chain: "base-sepolia", sandbox: true, simulatedDeposits: true,
     now: () => new Date(clock),
     onEvent: (u: string, t: string, d: Record<string, unknown>) => dev?.onEvent(u, t, d) ?? Promise.resolve(),
     ...deps,
-  } as unknown as AppDeps);
-  dev = new DeveloperService({
+  } as unknown as CardholderContext);
+  dev = new DeveloperInteractor({
     pool, app, allowLocalWebhooks: opts.allowLocalWebhooks ?? false, publicUrl: "https://cards.example", now: () => new Date(clock),
     fetch: opts.fetch, resolve: opts.resolve ?? (async () => ["93.184.216.34"]),
   });
@@ -173,7 +173,7 @@ test("webhooks: signed, retried with backoff, and queued only for users who have
   assert.equal(c.url, "https://hooks.example.com/agent-cards");
   const m = /^t=(\d+),v1=([0-9a-f]{64})$/.exec(c.headers["x-agentcards-signature"]!);
   assert.ok(m, "signature header has the t=,v1= shape");
-  assert.equal(c.headers["x-agentcards-signature"], DeveloperService.sign(set.webhookSecret!, Number(m![1]), c.body));
+  assert.equal(c.headers["x-agentcards-signature"], DeveloperInteractor.sign(set.webhookSecret!, Number(m![1]), c.body));
   const body = JSON.parse(c.body);
   assert.equal(body.type, "funding.completed");
   assert.equal(body.externalId, "c1");
@@ -241,12 +241,12 @@ test("privacy mode is a developer setting that defaults off", { skip }, async ()
 test("HTTP: developer key, session and owner token each open only their own door", { skip }, async () => {
   const s = await setup();
   // The server only answers its allowed Host values, so find a free port first.
-  const probe = createAppServer(s.app, { allowedHosts: [] });
+  const probe = createAppServer({ cardholders: s.app }, { allowedHosts: [] });
   await new Promise<void>((r) => probe.listen(0, "127.0.0.1", r));
   const port = (probe.address() as AddressInfo).port;
   await new Promise<void>((r) => probe.close(() => r()));
   const hosts = [`127.0.0.1:${port}`];
-  const real = createAppServer(s.app, { allowedHosts: hosts, developers: s.dev });
+  const real = createAppServer({ cardholders: s.app, developers: s.dev }, { allowedHosts: hosts });
   await new Promise<void>((r) => real.listen(port, "127.0.0.1", r));
   servers.push(real);
   const call = async (method: string, path: string, token?: string, body?: unknown) => {

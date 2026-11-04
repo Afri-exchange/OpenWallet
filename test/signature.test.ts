@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { newReference, sign } from "../src/miden/signature.js";
+import { newReference, sign } from "../src/lib/clients/cardIssuing/miden/signature.js";
 
 const p = { method: "post", url: "https://x.test/a?b=c", reference: "ref", clientId: "id", clientSecret: "secret" };
 

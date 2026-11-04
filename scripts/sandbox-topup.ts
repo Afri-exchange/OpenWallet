@@ -1,7 +1,7 @@
 // Sandbox only: tops up the first saved card by $2.00 and re-sends an issue with a duplicate clientReference.
 import { readFileSync } from "node:fs";
-import { MidenClient, MidenApiError } from "../src/miden/client.js";
-import { MidenWalletFunding } from "../src/funding/miden-wallet.js";
+import { MidenClient, MidenApiError } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
+import { MidenWalletFunding } from "../src/adapters/funding/MidenWalletFunding.js";
 const client = new MidenClient({
   baseUrl: "https://sandbox-api.midencards.io/miden", tokenUrl: "https://sandbox-identityserver.midencards.io/connect/token",
   clientId: process.env.MIDEN_CLIENT_ID!, clientSecret: process.env.MIDEN_CLIENT_SECRET!, uniqueKey: process.env.MIDEN_UNIQUE_KEY!,

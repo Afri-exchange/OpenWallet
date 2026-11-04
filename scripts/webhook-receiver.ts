@@ -4,7 +4,7 @@
 // Run: node --env-file=.env --import tsx scripts/webhook-receiver.ts   (PORT defaults to 8788; binds 127.0.0.1 only, a tunnel connects to it locally)
 import { createServer } from "node:http";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { verifyWebhook } from "../src/webhooks/signature.js";
+import { verifyWebhook } from "../src/lib/clients/cardIssuing/miden/webhookSignature.js";
 
 const hash = process.env.MIDEN_WEBHOOK_HASH ?? "";
 const dir = new URL("../.webhook-captures/", import.meta.url);

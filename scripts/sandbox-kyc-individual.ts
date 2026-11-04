@@ -1,6 +1,6 @@
 // Sandbox only: DUMMY individual Card KYC; saves to .sandbox-state.json under "user1".
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { MidenClient, MidenApiError } from "../src/miden/client.js";
+import { MidenClient, MidenApiError } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
 
 const client = new MidenClient({
   baseUrl: "https://sandbox-api.midencards.io/miden", tokenUrl: "https://sandbox-identityserver.midencards.io/connect/token",

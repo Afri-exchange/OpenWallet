@@ -2,9 +2,9 @@
 // first one twice with Miden's mock authorization, and prints what Miden says. Prints ids and statuses, never card data.
 //   node --import tsx scripts/sandbox-lite.ts [who=platform] [n=4]
 import { readFileSync } from "node:fs";
-import { MidenClient, MidenApiError } from "../src/miden/client.js";
-import { CardLifecycle } from "../src/cards/lifecycle.js";
-import { referenceFor } from "../src/funding/miden-wallet.js";
+import { MidenClient, MidenApiError } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
+import { CardLifecycle } from "../src/adapters/virtualCards/CardLifecycle.js";
+import { referenceFor } from "../src/adapters/funding/MidenWalletFunding.js";
 
 const env = process.env;
 const miden = new MidenClient({

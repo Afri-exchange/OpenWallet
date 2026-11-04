@@ -6,7 +6,7 @@ How merchants get paid by agents. SDK reference: [sdk/checkout/README.md](../sdk
 
 A merchant signs up for a secret key (`mk_…`) and creates a fixed-price checkout (`cs_…`, with a `/pay/cs_…` page). The agent pays it with the MCP tool `pay_checkout` or `POST /agent/v1/checkouts/<id>/pay`. The merchant fulfils the order once the checkout reads `paid`.
 
-The payment is an ordinary agent payment (`AppService.pay`), so agent and card limits, the MCC allowlist, idempotency and reconcile all apply. `src/app/checkout.ts` guarantees a checkout is paid at most once:
+The payment is an ordinary agent payment (`CardholderInteractor.pay`), so agent and card limits, the MCC allowlist, idempotency and reconcile all apply. `src/lib/interactors/CheckoutInteractor.ts` guarantees a checkout is paid at most once:
 
 - an atomic claim, plus a spend key per attempt (`checkout:<id>:<n>`), so a declined attempt can be retried and one attempt is never charged twice
 - spend keys starting `checkout:` are reserved: an agent cannot pre-spend under one
@@ -29,8 +29,8 @@ Decision (boss, 2026-10-19): we are merchant of record, so card details reach ne
 Rail: **USDC on Base Sepolia, testnet only** (boss, 2026-10-19; bank transfers later). `UsdcPayoutRail` refuses mainnet.
 
 - The merchant sets an address with `POST /merchant/v1/payout-address` (never one of our deposit addresses or the payout account). A new address can be paid only after `PAYOUT_ADDRESS_DELAY_S` (10 min in the sandbox, 24 h default in code). Each payout records the address it was requested to, so a stolen key cannot redirect money at once.
-- A payout is reserved (`merchant → payout_pending`, key `payout-reserve:<id>`) before anything is sent. It is completed or released only on the rail's definite answer (`CheckoutService.settlePayout`). A missing answer never releases. The rail sends only payouts whose reservation exists.
-- `PayoutSender` (`src/app/payouts.ts`) runs in the background loop, one sender across processes by advisory lock. It signs from our payout account (`m/44'/60'/1'/0/0`, logged at startup; fund it with test USDC and Base Sepolia ETH) at an explicit nonce, stores the signed bytes, then broadcasts. One transfer in flight at a time.
+- A payout is reserved (`merchant → payout_pending`, key `payout-reserve:<id>`) before anything is sent. It is completed or released only on the rail's definite answer (`CheckoutInteractor.settlePayout`). A missing answer never releases. The rail sends only payouts whose reservation exists.
+- `PayoutInteractor` (`src/lib/interactors/PayoutInteractor.ts`) runs in the background loop, one sender across processes by advisory lock. It signs from our payout account (`m/44'/60'/1'/0/0`, logged at startup; fund it with test USDC and Base Sepolia ETH) at an explicit nonce, stores the signed bytes, then broadcasts. One transfer in flight at a time.
 - A lost answer is rebroadcast with the same bytes, so it mines at most once. After 5 confirmations it is `sent`. A revert on chain is `failed`, money back in the balance.
 - If our nonce is used by another transaction, the payout is flagged `needs_review`, the money stays reserved and the queue stops. Ops runbook: [ops.md](ops.md).
 - `settlePayout` claims the payout row before moving money, so ops and the sender never both settle one payout. Ops can settle only a `requested` payout; the rail only a `sending` one (the review case above is the one exception).

@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CardService, type AgentCard } from "../src/cards/service.js";
-import type { FundingSource } from "../src/funding/types.js";
-import type { MidenClient } from "../src/miden/client.js";
+import { CardService, type AgentCard } from "../src/adapters/virtualCards/CardService.js";
+import type { FundingSource } from "../src/domain/interfaces/FundingSource.js";
+import type { MidenClient } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
 
 // Tests prefixed "BUG:" assert the desired behaviour and currently FAIL.
 

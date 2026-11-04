@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MidenClient } from "../src/miden/client.js";
-import { sign } from "../src/miden/signature.js";
+import { MidenClient } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
+import { sign } from "../src/lib/clients/cardIssuing/miden/signature.js";
 
 const cfg = { baseUrl: "https://api.test/miden", tokenUrl: "https://id.test/connect/token", clientId: "id", clientSecret: "secret", uniqueKey: "uk" };
 

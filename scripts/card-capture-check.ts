@@ -11,11 +11,11 @@
 //                      add --refresh to re-read name/billing address for a card already in the vault
 //   Live spends real money ($amount is debited from the Miden wallet) and creates a real card: it needs --confirm-live.
 import { readFileSync } from "node:fs";
-import { CardService } from "../src/cards/service.js";
-import { MidenApiError, MidenClient } from "../src/miden/client.js";
+import { CardService } from "../src/adapters/virtualCards/CardService.js";
+import { MidenApiError, MidenClient } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
 import pg from "pg";
-import { PgStore } from "../src/ledger/pg-store.js";
-import { MemoryCardVault, PgCardVault, vaultKeyFromEnv, type CardVault } from "../src/vault/vault.js";
+import { PgLedgerStore } from "../src/db/repositories/PgLedgerStore.js";
+import { MemoryCardVault, PgCardVault, vaultKeyFromEnv, type CardVault } from "../src/adapters/cardVault/CardVault.js";
 
 const env = process.env;
 const args = process.argv.slice(2);
@@ -52,7 +52,7 @@ let pool: pg.Pool | undefined;
 let vault: CardVault = new MemoryCardVault();
 if (persist) {
   pool = new pg.Pool({ connectionString: need("DATABASE_URL"), max: 2 });
-  await new PgStore(pool).migrate();
+  await new PgLedgerStore(pool).migrate();
   vault = new PgCardVault(pool, vaultKeyFromEnv());
 }
 const svc = new CardService(miden, { fund: async () => ({ id: "n/a", status: "pending" }) }, undefined, {

@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CardService } from "../src/cards/service.js";
-import { TieredCardIssuer, capPolicy, type TierLimits } from "../src/cards/tiers.js";
-import type { FundingSource } from "../src/funding/types.js";
-import type { MidenClient } from "../src/miden/client.js";
+import { CardService } from "../src/adapters/virtualCards/CardService.js";
+import { TieredCardIssuer, capPolicy, type TierLimits } from "../src/lib/services/tiers.js";
+import type { FundingSource } from "../src/domain/interfaces/FundingSource.js";
+import type { MidenClient } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
 
 const tiers = {
   quick: { perTransactionCents: 1_000, dailyCents: 2_000, lifetimeFundedCents: 5_000 },

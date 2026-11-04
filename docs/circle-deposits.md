@@ -1,6 +1,6 @@
 # Circle deposits (sandbox)
 
-Instead of polling Base for transfers to addresses we derive, a Circle developer-controlled wallet is created for each card on the fly, and Circle calls us when USDC arrives. Code: `src/chain/circle.ts`, route `POST /webhooks/circle` in `src/app/server.ts`, wiring in `src/app/main.ts`, tests `test/circle.test.ts`. Reference: Circle's skills page (developers.circle.com/ai/skills), `use-developer-controlled-wallets`.
+Instead of polling Base for transfers to addresses we derive, a Circle developer-controlled wallet is created for each card on the fly, and Circle calls us when USDC arrives. Code: `src/adapters/deposits/CircleDeposits.ts`, route `POST /webhooks/circle` in `src/createHttpServer.ts`, wiring in `src/main.ts`, tests `test/circle.test.ts`. Reference: Circle's skills page (developers.circle.com/ai/skills), `use-developer-controlled-wallets`.
 
 **Status: unit-tested against mocks, and checked end to end once in the sandbox** with a real 20 USDC faucet deposit on Base Sepolia (Circle wallet per card, signed webhook, ledger credit; the catch-up pass covers missed deliveries). Only that one path was exercised: ETH-SEPOLIA, a redelivery from Circle itself and a longer outage were not.
 

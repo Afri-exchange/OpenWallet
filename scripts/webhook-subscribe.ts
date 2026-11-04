@@ -1,7 +1,7 @@
 // Points Miden's card and collection webhooks at <url> and registers MIDEN_WEBHOOK_HASH.
 // This OVERWRITES the account's existing webhook config (PATCH /api/v1/webhook/subscribe).
 // Run: node --env-file=.env --import tsx scripts/webhook-subscribe.ts https://host/path
-import { MidenClient, MidenApiError, configFromEnv } from "../src/miden/client.js";
+import { MidenClient, MidenApiError, configFromEnv } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
 
 const url = process.argv[2];
 const webhookHash = process.env.MIDEN_WEBHOOK_HASH;

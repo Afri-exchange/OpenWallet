@@ -1,6 +1,6 @@
 // Sandbox only: same clientReference, fresh Reference header. Does Miden reject the second issuance?
 import { readFileSync } from "node:fs";
-import { MidenClient, MidenApiError } from "../src/miden/client.js";
+import { MidenClient, MidenApiError } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
 const c = new MidenClient({ baseUrl: "https://sandbox-api.midencards.io/miden", tokenUrl: "https://sandbox-identityserver.midencards.io/connect/token", clientId: process.env.MIDEN_CLIENT_ID!, clientSecret: process.env.MIDEN_CLIENT_SECRET!, uniqueKey: process.env.MIDEN_UNIQUE_KEY! });
 const s = JSON.parse(readFileSync(".sandbox-state.json", "utf8"));
 const k = s.user1;

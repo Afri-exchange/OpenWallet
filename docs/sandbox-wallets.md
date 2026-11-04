@@ -1,6 +1,6 @@
 # Wallet setup for the sandbox demo (our own wallets)
 
-For the demo we do not use a custody provider. We generate and hold our own deposit wallet, and every user's deposit address comes from it. Code: `src/app/hd-wallet.ts`; address allocation in `src/app/service.ts` (`ensureDepositAddress`). **Sandbox and testnet only.**
+For the demo we do not use a custody provider. We generate and hold our own deposit wallet, and every user's deposit address comes from it. Code: `src/adapters/wallet/HdDepositWallet.ts`; address allocation in `src/lib/interactors/CardholderInteractor.ts` (`ensureDepositAddress`). **Sandbox and testnet only.**
 
 There are three different "wallets" in this project. Keep them apart:
 
@@ -36,7 +36,7 @@ Do not read or print the file in demos, logs or tickets. If you need to prove an
 
 1. **Postgres.** Create a database and point at it: `createdb agent_cards` and `export DATABASE_URL=postgres://localhost/agent_cards` (this is also the default). Migrations apply themselves on boot.
 2. **Miden credentials** are already environment variables in the office shell (`MIDEN_CLIENT_ID`, `MIDEN_CLIENT_SECRET`, `MIDEN_UNIQUE_KEY`). If you need a `.env` for a tool, use `write_env_file`; do not type values anywhere. This machine's IP must be whitelisted in the Miden dashboard or calls return 401/403.
-3. **Start the service:** `node --import tsx src/app/main.ts`. First boot creates the wallet file. Check the log line `agent-cards sandbox on http://127.0.0.1:8787 (chain base-sepolia, rpc …)`.
+3. **Start the service:** `node --import tsx src/main.ts`. First boot creates the wallet file. Check the log line `agent-cards sandbox on http://127.0.0.1:8787 (chain base-sepolia, rpc …)`.
 4. **Sign up and KYC** in the dashboard (`http://127.0.0.1:8787`) with dummy data. For the sandbox, `idType: PASSPORT`, a distinct id number/phone/email per demo user (identity de-duplication), and any small PNG/JPEG as the ID image.
 5. **Copy the deposit address** from the dashboard once the card shows.
 6. **Get test USDC:** use Circle's faucet (faucet.circle.com), choose **Base Sepolia**, USDC, and paste the address. The faucet is rate-limited. You do not need test ETH to *receive*: the sender pays gas, not us.

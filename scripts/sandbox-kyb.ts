@@ -1,7 +1,7 @@
 // Sandbox only: submits DUMMY business KYB, stores customerId/kycToken in gitignored .sandbox-state.json.
 // Never prints credentials or kycToken. Run with MIDEN_* secrets in the environment.
 import { writeFileSync } from "node:fs";
-import { MidenClient, MidenApiError } from "../src/miden/client.js";
+import { MidenClient, MidenApiError } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
 
 const baseUrl = "https://sandbox-api.midencards.io/miden";
 const tokenUrl = "https://sandbox-identityserver.midencards.io/connect/token";

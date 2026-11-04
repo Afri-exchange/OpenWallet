@@ -9,11 +9,11 @@
 // so it can never charge anyone. --miden-address swaps the US address for a Nigerian one in the shape Miden's full-PAN
 // billingDetails returns (alpha-2 country, state as a name), mapped through toBillingAddress like a real capture.
 // It proves our selectors, price check and result detection still match Stripe's page.
-import { PlaywrightFiller } from "../src/checkout-swap/playwright-filler.js";
-import { startCheckoutFixture } from "../src/checkout-swap/fixture.js";
-import { DEFAULT_SWAP_HOSTS } from "../src/checkout-swap/swap.js";
-import type { CardDetails } from "../src/vault/vault.js";
-import { toBillingAddress } from "../src/miden/card-details.js";
+import { PlaywrightFiller } from "../src/adapters/checkoutFillers/PlaywrightFiller.js";
+import { startCheckoutFixture } from "../src/adapters/checkoutFillers/fixtures/stripeFixture.js";
+import { DEFAULT_SWAP_HOSTS } from "../src/lib/interactors/SwapInteractor.js";
+import type { CardDetails } from "../src/adapters/cardVault/CardVault.js";
+import { toBillingAddress } from "../src/lib/clients/cardIssuing/miden/cardDetails.js";
 
 const args = process.argv.slice(2);
 const arg = (k: string) => {

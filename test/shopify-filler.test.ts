@@ -1,9 +1,9 @@
 import { test, after, before } from "node:test";
 import assert from "node:assert/strict";
-import { parseUsdCents, type CardDetails, type CheckoutFiller, type FillRequest, type FillResult } from "../src/checkout-swap/filler.js";
-import { ShopifyFiller } from "../src/checkout-swap/shopify-filler.js";
-import { startShopifyFixture, type ShopifyFixture } from "../src/checkout-swap/shopify-fixture.js";
-import { checkoutKind, RoutingFiller } from "../src/checkout-swap/router-filler.js";
+import { parseUsdCents, type CardDetails, type CheckoutFiller, type FillRequest, type FillResult } from "../src/adapters/checkoutFillers/CheckoutFiller.js";
+import { ShopifyFiller } from "../src/adapters/checkoutFillers/ShopifyFiller.js";
+import { startShopifyFixture, type ShopifyFixture } from "../src/adapters/checkoutFillers/fixtures/shopifyFixture.js";
+import { checkoutKind, RoutingFiller } from "../src/adapters/checkoutFillers/RoutingFiller.js";
 
 const TEST_CARD: CardDetails = { pan: "4242424242424242", cvv: "123", expMonth: 12, expYear: 2030, nameOnCard: "Ada Test", billingZip: "94107" };
 const WITH_ADDRESS: CardDetails = { ...TEST_CARD, billingAddress: { line1: "510 Townsend St", city: "San Francisco", state: "CA", country: "US" } };

@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Onboarding, type IndividualKyc } from "../src/users/onboarding.js";
-import { CardService } from "../src/cards/service.js";
-import { TieredCardIssuer } from "../src/cards/tiers.js";
-import { CardLifecycle } from "../src/cards/lifecycle.js";
-import type { MidenClient } from "../src/miden/client.js";
+import { Onboarding, type IndividualKyc } from "../src/adapters/onboarding/onboarding.js";
+import { CardService } from "../src/adapters/virtualCards/CardService.js";
+import { TieredCardIssuer } from "../src/lib/services/tiers.js";
+import { CardLifecycle } from "../src/adapters/virtualCards/CardLifecycle.js";
+import type { MidenClient } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
 
 const kyc: IndividualKyc = {
   firstName: "Test", lastName: "Person", dateOfBirth: "1990-01-01", idType: "PASSPORT", idNumber: "A1", idFrontImage: "data:image/png;base64,AA",

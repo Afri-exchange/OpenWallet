@@ -2,8 +2,8 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import pg from "pg";
-import { PgStore } from "../src/ledger/pg-store.js";
-import { PgCursor, PgDepositAddresses } from "../src/chain/pg.js";
+import { PgLedgerStore } from "../src/db/repositories/PgLedgerStore.js";
+import { PgCursor, PgDepositAddresses } from "../src/db/repositories/PgChainRepositories.js";
 
 // Runs only with DATABASE_URL, like test/ledger.test.ts. Each case gets its own schema.
 const databaseUrl = process.env.DATABASE_URL;
@@ -17,7 +17,7 @@ async function fresh(): Promise<pg.Pool> {
   schemas.push(schema);
   const pool = new pg.Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 4 });
   pools.push(pool);
-  await new PgStore(pool).migrate();
+  await new PgLedgerStore(pool).migrate();
   return pool;
 }
 

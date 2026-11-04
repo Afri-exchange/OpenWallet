@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CardService, type AgentCard } from "../src/cards/service.js";
-import type { FundingSource } from "../src/funding/types.js";
-import type { MidenClient } from "../src/miden/client.js";
+import { CardService, type AgentCard } from "../src/adapters/virtualCards/CardService.js";
+import type { FundingSource } from "../src/domain/interfaces/FundingSource.js";
+import type { MidenClient } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
 
 const card: AgentCard = { id: "c1", agentId: "a1", policy: { perTransactionCents: 5_000, dailyCents: 8_000 } };
 const funding: FundingSource = { fund: async () => ({ id: "r", status: "pending" }) };
@@ -34,8 +34,8 @@ test("daily total resets on a new UTC day", () => {
   assert.equal(s.authorize(card, 5_000).ok, true);
 });
 
-import { CardService as IssueCardService } from "../src/cards/service.js";
-import { MidenClient as IssueMidenClient } from "../src/miden/client.js";
+import { CardService as IssueCardService } from "../src/adapters/virtualCards/CardService.js";
+import { MidenClient as IssueMidenClient } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
 
 function issueFixture(reply: unknown) {
   const calls: { url: string; init: RequestInit }[] = [];

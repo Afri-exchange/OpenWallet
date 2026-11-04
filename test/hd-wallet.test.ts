@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { chmodSync, mkdtempSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { HdDepositWallet } from "../src/app/hd-wallet.js";
+import { HdDepositWallet } from "../src/adapters/wallet/HdDepositWallet.js";
 
 test("creates a 600 wallet file and derives stable addresses", () => {
   const path = join(mkdtempSync(join(tmpdir(), "hdw-")), "w.json");
