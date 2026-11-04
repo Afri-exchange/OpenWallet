@@ -181,11 +181,12 @@ async function setup(cfg: Partial<SwapConfig> = {}, opts: { privacy?: boolean } 
   const vaultRef: { v?: MemoryCardVault } = {};
   const oneTimeCards: string[] = [];
   const app = new CardholderInteractor({
-    pool, ledger, wallets: new AgentWallets(ledger), addresses: createDepositAddressRepository(db, "base-sepolia"),
+    users: repos.users, cards: repos.cards, agents: repos.agents, spends: repos.spends, fundings: repos.fundings, oneTimeCards: repos.oneTimeCards,
+    ledger, wallets: new AgentWallets(ledger), addresses: createDepositAddressRepository(db, "base-sepolia"),
     deriveAddress: (i: number) => `0x${i.toString(16).padStart(40, "0")}`, tiers: DEFAULT_TIERS, chain: "base-sepolia", sandbox: true, simulatedDeposits: true,
     miden: { request: async () => ({ isSuccessful: true, responseCode: "00", kycStatus: "Initiated" }) },
     lifecycle,
-    cards: {
+    cardIssuer: {
       issue: async (_a: string, policy: unknown) => ({ id: `card-${randomBytes(3).toString("hex")}`, agentId: "x", policy, detailsCaptured: true }),
       // Like the real service: a one-time card's details are sealed into the vault when it is issued.
       issueOneTime: async (_k: unknown, _amount: number, _ref: string, o: { capture: boolean }) => {
@@ -473,7 +474,7 @@ test("swap, privacy mode: same-amount payments run side by side, and reconcile r
 test("swap, privacy mode: no one-time card means nothing is typed and nothing is charged", { skip }, async () => {
   const s = await setup({}, { privacy: true });
   // Swap in a card service that cannot make cards.
-  (s.app as any).d.cards = { ...(s.app as any).d.cards, issueOneTime: async () => { throw new MidenApiError("POST", "/api/v2/cards/issue-lite", 400, JSON.stringify({ responseCode: "111", responseMessage: "Maximum Number of Cards Per customer Limit 3 Exceeded" })); } };
+  (s.app as any).d.cardIssuer = { ...(s.app as any).d.cardIssuer, issueOneTime: async () => { throw new MidenApiError("POST", "/api/v2/cards/issue-lite", 400, JSON.stringify({ responseCode: "111", responseMessage: "Maximum Number of Cards Per customer Limit 3 Exceeded" })); } };
   const r = await s.swap.pay(s.p, req());
   assert.equal(r.status, "failed");
   assert.match(r.payment!.reason!, /Limit 3 Exceeded/);

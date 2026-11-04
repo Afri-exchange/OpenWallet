@@ -64,7 +64,7 @@ function fakeMiden() {
       },
       transactions: async (cardId: string, type?: string) => f.txns.filter((t) => t.cardId === cardId && (!type || t.transactionType === type)),
     },
-    cards: { issue: async (_a: string, policy: unknown) => ({ id: `card-${++f.cardsIssued}`, agentId: "x", policy }) },
+    cardIssuer: { issue: async (_a: string, policy: unknown) => ({ id: `card-${++f.cardsIssued}`, agentId: "x", policy }) },
     funding: {
       fund: async (req: FundingRequest) => {
         f.fundCalls.push(req);
@@ -97,7 +97,8 @@ async function setup() {
   const { f, deps } = fakeMiden();
   const make = (over: Partial<CardholderContext> = {}) => {
     const d = {
-      pool, ledger, wallets: new AgentWallets(ledger), addresses: createDepositAddressRepository(db, "base-sepolia"),
+      users: repos.users, cards: repos.cards, agents: repos.agents, spends: repos.spends, fundings: repos.fundings, oneTimeCards: repos.oneTimeCards,
+      ledger, wallets: new AgentWallets(ledger), addresses: createDepositAddressRepository(db, "base-sepolia"),
       deriveAddress: (i: number) => `0x${i.toString(16).padStart(40, "0")}`, tiers: DEFAULT_TIERS, chain: "base-sepolia", sandbox: true, simulatedDeposits: true,
       ...deps,
       ...over,

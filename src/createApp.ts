@@ -27,7 +27,9 @@ export function createApp(p: AppParams): AgentCardsApp & Required<Pick<AgentCard
   // tie the knot with a late binding.
   let developers: DeveloperInteractor | undefined;
   const cardholders = new CardholderInteractor({
-    pool: p.pool, ledger: p.ledger, miden: p.miden, lifecycle: p.lifecycle, cards: p.cards, funding: p.funding,
+    users: p.repos.users, cards: p.repos.cards, agents: p.repos.agents, spends: p.repos.spends, fundings: p.repos.fundings,
+    oneTimeCards: p.repos.oneTimeCards,
+    ledger: p.ledger, miden: p.miden, lifecycle: p.lifecycle, cardIssuer: p.cards, funding: p.funding,
     wallets: p.wallets, addresses: p.addresses, deriveAddress: p.deriveAddress, tiers: p.tiers, chain: p.chain,
     sandbox: p.sandbox, simulatedDeposits: p.simulatedDeposits, log: p.log,
     ...(p.depositNetworks ? { depositNetworks: p.depositNetworks } : {}),

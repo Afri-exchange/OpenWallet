@@ -69,7 +69,7 @@ async function setup() {
         return `auth-${f.auths.length}`;
       },
     },
-    cards: {
+    cardIssuer: {
       issue: async (_a: string, policy: unknown) => ({ id: `card-${++cards}`, agentId: "x", policy }),
       issueOneTime: async (_kyc: unknown, amountCents: number, clientReference: string, o: { capture: boolean }) => {
         f.oneTime.push({ amountCents, clientReference, capture: o.capture });
@@ -84,7 +84,8 @@ async function setup() {
   };
   let dev: DeveloperInteractor | undefined;
   const app = new CardholderInteractor({
-    pool, ledger, wallets: new AgentWallets(ledger), addresses: createDepositAddressRepository(db, "base-sepolia"),
+    users: repos.users, cards: repos.cards, agents: repos.agents, spends: repos.spends, fundings: repos.fundings, oneTimeCards: repos.oneTimeCards,
+    ledger, wallets: new AgentWallets(ledger), addresses: createDepositAddressRepository(db, "base-sepolia"),
     deriveAddress: (i: number) => `0x${i.toString(16).padStart(40, "0")}`, tiers: DEFAULT_TIERS, chain: "base-sepolia", sandbox: true, simulatedDeposits: true,
     onEvent: (u: string, t: string, d: Record<string, unknown>) => dev?.onEvent(u, t, d) ?? Promise.resolve(),
     ...deps,

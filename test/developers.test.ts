@@ -50,12 +50,13 @@ async function setup(opts: { allowLocalWebhooks?: boolean; fetch?: typeof fetch;
   const deps = {
     miden: { request: async () => ({ isSuccessful: true, responseCode: "00", kycStatus: "Initiated" }) },
     lifecycle: { kycStatus: async () => ({ status: f.kyc, customerId: "cust-1", kycToken: "kt" }), cardBalance: async () => 0, transactions: async () => [] },
-    cards: { issue: async (_a: string, policy: unknown) => ({ id: `card-${++cards}`, agentId: "x", policy }) },
+    cardIssuer: { issue: async (_a: string, policy: unknown) => ({ id: `card-${++cards}`, agentId: "x", policy }) },
     funding: { fund: async (_r: FundingRequest) => ({ id: "m1", status: "confirmed" as const }) },
   };
   let dev: DeveloperInteractor | undefined;
   const app = new CardholderInteractor({
-    pool, ledger, wallets: new AgentWallets(ledger), addresses: createDepositAddressRepository(db, "base-sepolia"),
+    users: repos.users, cards: repos.cards, agents: repos.agents, spends: repos.spends, fundings: repos.fundings, oneTimeCards: repos.oneTimeCards,
+    ledger, wallets: new AgentWallets(ledger), addresses: createDepositAddressRepository(db, "base-sepolia"),
     deriveAddress: (i: number) => `0x${i.toString(16).padStart(40, "0")}`, tiers: DEFAULT_TIERS, chain: "base-sepolia", sandbox: true, simulatedDeposits: true,
     now: () => new Date(clock),
     onEvent: (u: string, t: string, d: Record<string, unknown>) => dev?.onEvent(u, t, d) ?? Promise.resolve(),
