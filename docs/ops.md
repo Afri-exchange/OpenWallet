@@ -51,7 +51,7 @@ The payout queue is stopped behind it and the money stays reserved.
 
    `afterReview` works only while `needs_review` is set.
 
-**Crash between the row update and the ledger step:** money sits in `payout_pending` until the next `CheckoutService.sync()`, which re-runs `settlePayout` with the row's own outcome for every sent/failed payout that has a reservation and no complete/release entry. Calling `settlePayout` again by hand does the same. The same applies to a `failed` payout that still shows pending money: call `settlePayout` again with the same failure.
+**Crash between the row update and the ledger step:** money sits in `payout_pending` until the next `CheckoutInteractor.sync()`, which re-runs `settlePayout` with the row's own outcome for every sent/failed payout that has a reservation and no complete/release entry. Calling `settlePayout` again by hand does the same. The same applies to a `failed` payout that still shows pending money: call `settlePayout` again with the same failure.
 
 ## Tokens and POSTs
 

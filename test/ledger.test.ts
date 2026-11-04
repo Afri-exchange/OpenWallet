@@ -2,13 +2,13 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import pg from "pg";
-import { Ledger, LedgerError, accounts } from "../src/ledger/ledger.js";
-import { PgStore } from "../src/ledger/pg-store.js";
+import { Ledger, LedgerError, accounts } from "../src/lib/services/Ledger.js";
+import { PgLedgerStore } from "../src/db/repositories/PgLedgerStore.js";
 
 const dep = { chain: "evm-1", asset: "USDC", cardId: "c1", amountCents: 10_000, txHash: "0xabc", logIndex: 0 };
 
 /** Each case builds a fresh ledger. The Postgres variant gets its own schema so cases never share rows. */
-interface Backend { name: string; make: () => Promise<{ ledger: Ledger; store?: PgStore }> }
+interface Backend { name: string; make: () => Promise<{ ledger: Ledger; store?: PgLedgerStore }> }
 
 const backends: Backend[] = [{ name: "memory", make: async () => ({ ledger: new Ledger() }) }];
 
@@ -23,7 +23,7 @@ if (databaseUrl) {
       const schema = `t_${randomBytes(6).toString("hex")}`;
       await admin!.query(`CREATE SCHEMA ${schema}`);
       schemas.push(schema);
-      const store = new PgStore(new pg.Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 10 }));
+      const store = new PgLedgerStore(new pg.Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 10 }));
       await store.migrate();
       return { ledger: new Ledger(undefined, store), store };
     },
@@ -36,7 +36,7 @@ after(async () => {
 });
 
 for (const backend of backends) {
-  const t = (name: string, fn: (l: Ledger, store?: PgStore) => Promise<void>) =>
+  const t = (name: string, fn: (l: Ledger, store?: PgLedgerStore) => Promise<void>) =>
     test(`[${backend.name}] ${name}`, async () => {
       const { ledger, store } = await backend.make();
       try {
@@ -297,7 +297,7 @@ if (databaseUrl) {
     const schema = `t_${randomBytes(6).toString("hex")}`;
     await admin!.query(`CREATE SCHEMA ${schema}`);
     schemas.push(schema);
-    const open = () => new PgStore(new pg.Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 2 }));
+    const open = () => new PgLedgerStore(new pg.Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 2 }));
     const s1 = open();
     await s1.migrate();
     await new Ledger(undefined, s1).confirmDeposit(dep);

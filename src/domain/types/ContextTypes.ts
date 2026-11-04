@@ -1,0 +1,77 @@
+import type pg from "pg";
+import type { CardVault } from "../../adapters/cardVault/CardVault.js";
+import type { CheckoutFiller } from "../../adapters/checkoutFillers/CheckoutFiller.js";
+import type { CircleDeposits } from "../../adapters/deposits/CircleDeposits.js";
+import type { CursorStore, Rpc } from "../../adapters/deposits/BaseUsdcWatcher.js";
+import type { CardLifecycle } from "../../adapters/virtualCards/CardLifecycle.js";
+import type { CardService } from "../../adapters/virtualCards/CardService.js";
+import type { PgDepositAddresses } from "../../db/repositories/PgChainRepositories.js";
+import type { MidenClient } from "../../lib/clients/cardIssuing/miden/MidenClient.js";
+import type { PayoutRail } from "../../lib/interactors/PayoutInteractor.js";
+import type { SwapConfig } from "../../lib/interactors/SwapInteractor.js";
+import type { AgentWallets } from "../../lib/services/AgentWallets.js";
+import type { Ledger } from "../../lib/services/Ledger.js";
+import type { Tier, TierLimits } from "../../lib/services/tiers.js";
+import type { FundingSource } from "../interfaces/FundingSource.js";
+
+/** A chain the background workers poll for USDC deposits (the HD-wallet rail). */
+export interface WatchedNetwork {
+  /** Ledger chain label, e.g. "base-sepolia". */
+  label: string;
+  /** The USDC contract on that chain. */
+  token: string;
+  rpc: Rpc;
+  cursor: CursorStore;
+  confirmations: number;
+}
+
+/**
+ * Everything `bootstrap.ts` builds from config: clients, repositories, adapters and settings. `createApp`
+ * turns it into interactors; nothing below the composition root reads the environment.
+ */
+export interface AppParams {
+  // ----- data -----
+  pool: pg.Pool;
+  ledger: Ledger;
+  addresses: PgDepositAddresses;
+
+  // ----- card issuing (Miden) -----
+  miden: MidenClient;
+  lifecycle: CardLifecycle;
+  cards: CardService;
+  funding: FundingSource;
+  tiers: Record<Tier, TierLimits>;
+  /** Card details vault; without it cards issue but hosted checkouts cannot be paid. */
+  vault?: CardVault;
+
+  // ----- agents -----
+  wallets: AgentWallets;
+
+  // ----- deposits -----
+  /** Ledger chain label for real deposits, e.g. "base-sepolia". */
+  chain: string;
+  /** The deposit address for a unique index (our HD wallet, or a Circle wallet). */
+  deriveAddress: (index: number) => string | Promise<string>;
+  depositNetworks?: string[];
+  depositRail?: "circle" | "chain";
+  /** Chains the background workers poll; empty when deposits arrive by Circle webhook. */
+  watchedNetworks: WatchedNetwork[];
+  circleDeposits?: CircleDeposits;
+
+  // ----- checkouts, payouts, hosted-checkout swaps -----
+  publicUrl: string;
+  payoutAddressDelayMs: number;
+  isOwnAddress: (address: string) => Promise<boolean>;
+  payoutRail: PayoutRail;
+  swapConfig: SwapConfig;
+  checkoutFiller: CheckoutFiller;
+
+  // ----- developers -----
+  allowLocalWebhooks: boolean;
+
+  // ----- environment -----
+  /** Miden sandbox: agents pay through Miden's simulated authorization. */
+  sandbox: boolean;
+  simulatedDeposits: boolean;
+  log: (msg: string) => void;
+}

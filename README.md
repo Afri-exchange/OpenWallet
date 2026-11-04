@@ -35,7 +35,7 @@ Connect an agent (the dashboard shows these with the token filled in):
 
 ```
 claude mcp add --transport http agent-cards http://127.0.0.1:8787/mcp --header "Authorization: Bearer ak_..."   # MCP over HTTP
-AGENT_CARDS_URL=http://127.0.0.1:8787 AGENT_CARDS_TOKEN=ak_... node --import tsx src/app/mcp-stdio.ts          # MCP over stdio
+AGENT_CARDS_URL=http://127.0.0.1:8787 AGENT_CARDS_TOKEN=ak_... node --import tsx src/startMcpStdio.ts          # MCP over stdio
 curl -s http://127.0.0.1:8787/agent/v1/pay -H "Authorization: Bearer ak_..." -H "content-type: application/json" \
   -d '{"amountCents":500,"merchant":"Example API","mcc":"5734","idempotencyKey":"order-1"}'                    # REST
 ```
@@ -71,13 +71,18 @@ Request signing is documented in [docs/miden-api.md](docs/miden-api.md). Smoke c
 
 ## Layout
 
+The code follows the Afriex server's layers: `routes/ -> controllers/ -> lib/interactors/ -> lib/services/ / adapters/ -> db/repositories/, lib/clients/`. Details in [docs/architecture.md](docs/architecture.md#51-source-layout).
+
 | Path | What it is |
 | --- | --- |
-| `src/miden/` | `MidenClient` (token and signed requests) and request signing |
-| `src/funding/` | `FundingSource` interface and `MidenWalletFunding` |
-| `src/cards/` | `CardService` (`issue`, `topUp`), `SpendPolicy` and `evaluate()`, tiers |
-| `src/chain/` | `BaseUsdcWatcher` (USDC deposits on Base) and Postgres cursor and deposit addresses |
-| `src/app/` | The sandbox service: flows, HTTP and MCP servers, checkout, payouts, dashboard |
+| `src/main.ts`, `src/bootstrap.ts`, `src/createApp.ts` | Entry point; env -> clients, repositories, adapters (`AppParams`); `AppParams` -> interactors |
+| `src/routes/`, `src/controllers/`, `src/lib/middleware/` | HTTP: route tables, thin controllers, guards and auth |
+| `src/lib/interactors/` | Use cases: cardholders (signup, KYC, agents, pay), checkouts, payouts, hosted-checkout swaps, developers |
+| `src/lib/services/` | `Ledger`, `AgentWallets`, `SpendPolicy` and `evaluate()`, tiers |
+| `src/lib/clients/` | `MidenClient` (token and signed requests), `CircleClient` |
+| `src/adapters/` | `CardService` (`issue`, `topUp`), `MidenWalletFunding`, deposit watchers and Circle webhooks, payout rail, checkout fillers, card vault |
+| `src/db/` | Repositories (ledger store, chain cursor, deposit addresses) and SQL migrations |
+| `src/errors.ts` | `AgentCardsError` and its factories |
 | `sdk/checkout/` | `@agent-cards/checkout`, the merchant and agent SDK |
 | `test/` | `node:test` tests |
 

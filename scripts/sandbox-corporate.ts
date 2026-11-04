@@ -1,5 +1,5 @@
 // Sandbox only: tries POST /api/v1/cards/issue-corporate with dummy business details.
-import { MidenClient, MidenApiError } from "../src/miden/client.js";
+import { MidenClient, MidenApiError } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
 const c = new MidenClient({ baseUrl: "https://sandbox-api.midencards.io/miden", tokenUrl: "https://sandbox-identityserver.midencards.io/connect/token", clientId: process.env.MIDEN_CLIENT_ID!, clientSecret: process.env.MIDEN_CLIENT_SECRET!, uniqueKey: process.env.MIDEN_UNIQUE_KEY! });
 const ref = `test-corp-${Date.now()}`;
 try {

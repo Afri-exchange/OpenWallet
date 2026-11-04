@@ -3,17 +3,17 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import pg from "pg";
-import { AgentWallets } from "../src/agents/wallets.js";
-import { PgDepositAddresses } from "../src/chain/pg.js";
-import { DEFAULT_TIERS } from "../src/cards/tiers.js";
-import { Ledger, accounts } from "../src/ledger/ledger.js";
-import { PgStore } from "../src/ledger/pg-store.js";
-import { MidenApiError } from "../src/miden/client.js";
-import { CheckoutService } from "../src/app/checkout.js";
-import { MAX_SIGN_FAILURES, PayoutSender } from "../src/app/payouts.js";
-import type { SignedTransfer, TransferState } from "../src/chain/usdc-payout.js";
-import { createAppServer } from "../src/app/server.js";
-import { AppService, type AppDeps } from "../src/app/service.js";
+import { AgentWallets } from "../src/lib/services/AgentWallets.js";
+import { PgDepositAddresses } from "../src/db/repositories/PgChainRepositories.js";
+import { DEFAULT_TIERS } from "../src/lib/services/tiers.js";
+import { Ledger, accounts } from "../src/lib/services/Ledger.js";
+import { PgLedgerStore } from "../src/db/repositories/PgLedgerStore.js";
+import { MidenApiError } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
+import { CheckoutInteractor } from "../src/lib/interactors/CheckoutInteractor.js";
+import { MAX_SIGN_FAILURES, PayoutInteractor } from "../src/lib/interactors/PayoutInteractor.js";
+import type { SignedTransfer, TransferState } from "../src/adapters/payouts/UsdcPayoutRail.js";
+import { createAppServer } from "../src/createHttpServer.js";
+import { CardholderInteractor, type CardholderContext } from "../src/lib/interactors/CardholderInteractor.js";
 import { AgentCardsAgent, AgentCardsCheckout, AgentCardsError, checkoutButton, parseCheckoutId } from "../sdk/checkout/src/index.js";
 
 // Runs only with DATABASE_URL (each case gets its own schema). Miden is faked, as in app.test.ts.
@@ -70,18 +70,18 @@ async function setup() {
   schemas.push(schema);
   const pool = new pg.Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 6 });
   pools.push(pool);
-  await new PgStore(pool).migrate();
-  const ledger = new Ledger(undefined, new PgStore(pool));
+  await new PgLedgerStore(pool).migrate();
+  const ledger = new Ledger(undefined, new PgLedgerStore(pool));
   const { f, deps } = fakeMiden();
-  const make = (over: Partial<AppDeps> = {}) => new AppService({
+  const make = (over: Partial<CardholderContext> = {}) => new CardholderInteractor({
     pool, ledger, wallets: new AgentWallets(ledger), addresses: new PgDepositAddresses(pool, "base-sepolia"),
     deriveAddress: (i: number) => `0x${i.toString(16).padStart(40, "0")}`, tiers: DEFAULT_TIERS, chain: "base-sepolia", sandbox: true, simulatedDeposits: true,
     ...deps, ...over,
-  } as unknown as AppDeps);
+  } as unknown as CardholderContext);
   const app = make();
   const OWN = "0x00000000000000000000000000000000000000aa";
-  const checkoutFor = (a: AppService, now?: () => Date, payoutAddressDelayMs = 0) =>
-    new CheckoutService({ pool, ledger, app: a, publicUrl: "http://127.0.0.1:8787", now, payoutAddressDelayMs, isOwnAddress: async (x) => x === OWN });
+  const checkoutFor = (a: CardholderInteractor, now?: () => Date, payoutAddressDelayMs = 0) =>
+    new CheckoutInteractor({ pool, ledger, app: a, publicUrl: "http://127.0.0.1:8787", now, payoutAddressDelayMs, isOwnAddress: async (x) => x === OWN });
   const checkout = checkoutFor(app);
   const { userId } = await app.signup(`u${randomBytes(3).toString("hex")}@example.com`);
   await app.submitKyc(userId, KYC);
@@ -425,7 +425,7 @@ test("payout sender: signs, stores, then broadcasts; settles from the chain; nev
   await s.checkout.pay(p, c.checkoutId);
   await s.checkout.setPayoutAddress(mid, { address: WALLET });
   const rail = fakeRail();
-  const sender = new PayoutSender({ pool: s.pool, ledger: s.ledger, checkout: s.checkout, rail });
+  const sender = new PayoutInteractor({ pool: s.pool, ledger: s.ledger, checkout: s.checkout, rail });
 
   // Short of USDC in the payout account: nothing signed, it stays requested.
   const a = await s.checkout.requestPayout(mid, { amountCents: 1_000 });
@@ -437,7 +437,7 @@ test("payout sender: signs, stores, then broadcasts; settles from the chain; nev
   // Signed and stored before the broadcast; a lost broadcast is rebroadcast with the same bytes.
   rail.signFails = undefined;
   rail.broadcastFails = true;
-  await Promise.all([sender.tick(), new PayoutSender({ pool: s.pool, ledger: s.ledger, checkout: s.checkout, rail }).tick()]); // two processes
+  await Promise.all([sender.tick(), new PayoutInteractor({ pool: s.pool, ledger: s.ledger, checkout: s.checkout, rail }).tick()]); // two processes
   assert.equal(rail.signed.length, 1, "one transfer signed");
   assert.deepEqual({ to: rail.signed[0]!.to, amountCents: rail.signed[0]!.amountCents }, { to: WALLET, amountCents: 1_000 });
   let po = (await s.checkout.listPayouts(mid))[0]!;
@@ -560,7 +560,7 @@ test("payout sender: a payout that fails on its own does not block the queue, an
   const rail = fakeRail();
   rail.failTo = BAD;
   rail.isFunded = true;
-  const sender = new PayoutSender({ pool: s.pool, ledger: s.ledger, checkout: s.checkout, rail });
+  const sender = new PayoutInteractor({ pool: s.pool, ledger: s.ledger, checkout: s.checkout, rail });
   await sender.tick();
   assert.deepEqual(rail.signed.map((x) => x.to), [WALLET], "b goes out past a");
   rail.states.set(rail.signed[0]!.txHash, "confirmed");
@@ -578,18 +578,18 @@ test("payout sender: a requested payout without a ledger reservation is never si
   await s.checkout.setPayoutAddress(mid, { address: WALLET });
   await s.pool.query("INSERT INTO app_payout (payout_id, merchant_id, amount_cents, status, destination, chain) VALUES ('po_noreserve', $1, 100, 'requested', $2, 'base-sepolia')", [mid, WALLET]);
   const rail = fakeRail();
-  await new PayoutSender({ pool: s.pool, ledger: s.ledger, checkout: s.checkout, rail }).tick();
+  await new PayoutInteractor({ pool: s.pool, ledger: s.ledger, checkout: s.checkout, rail }).tick();
   assert.equal(rail.signed.length, 0);
 });
 
 test("checkout over HTTP with the SDK: merchant creates, agent pays, merchant sees paid", { skip }, async () => {
   const s = await setup();
   const { token } = await s.agent();
-  const server = createAppServer(s.app, { allowedHosts: [], checkout: s.checkout });
+  const server = createAppServer({ cardholders: s.app, checkouts: s.checkout }, { allowedHosts: [] });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const port = (server.address() as AddressInfo).port;
   server.close();
-  const real = createAppServer(s.app, { allowedHosts: [`127.0.0.1:${port}`], checkout: s.checkout });
+  const real = createAppServer({ cardholders: s.app, checkouts: s.checkout }, { allowedHosts: [`127.0.0.1:${port}`] });
   await new Promise<void>((r) => real.listen(port, "127.0.0.1", r));
   try {
     const baseUrl = `http://127.0.0.1:${port}`;

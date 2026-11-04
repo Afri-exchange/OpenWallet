@@ -1,9 +1,9 @@
 import { test, after, before } from "node:test";
 import assert from "node:assert/strict";
-import type { CardDetails, CheckoutFiller, FillRequest, FillResult } from "../src/checkout-swap/filler.js";
-import { LemonSqueezyFiller } from "../src/checkout-swap/lemonsqueezy-filler.js";
-import { startLemonSqueezyFixture, type LemonSqueezyFixture } from "../src/checkout-swap/lemonsqueezy-fixture.js";
-import { checkoutKind, RoutingFiller } from "../src/checkout-swap/router-filler.js";
+import type { CardDetails, CheckoutFiller, FillRequest, FillResult } from "../src/adapters/checkoutFillers/CheckoutFiller.js";
+import { LemonSqueezyFiller } from "../src/adapters/checkoutFillers/LemonSqueezyFiller.js";
+import { startLemonSqueezyFixture, type LemonSqueezyFixture } from "../src/adapters/checkoutFillers/fixtures/lemonSqueezyFixture.js";
+import { checkoutKind, RoutingFiller } from "../src/adapters/checkoutFillers/RoutingFiller.js";
 
 const TEST_CARD: CardDetails = { pan: "4242424242424242", cvv: "123", expMonth: 12, expYear: 2030, nameOnCard: "Ada Test", billingZip: "94107" };
 

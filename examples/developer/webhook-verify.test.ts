@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DeveloperService } from "../../src/developers/service.ts";
+import { DeveloperInteractor } from "../../src/lib/interactors/DeveloperInteractor.ts";
 import { verify } from "./webhook-verify.ts";
 
 const secret = "whsec_test";
 const body = JSON.stringify({ id: "evt_1", type: "spend.settled", data: { amountCents: 750 } });
 const now = 1_800_000_000_000;
-const header = (t: number, b = body, s = secret) => DeveloperService.sign(s, t, b);
+const header = (t: number, b = body, s = secret) => DeveloperInteractor.sign(s, t, b);
 
 test("accepts what the service signs", () => assert.equal(verify(secret, header(now / 1000), body, now), true));
 test("rejects a tampered body", () => assert.equal(verify(secret, header(now / 1000), body.replace("750", "75"), now), false));

@@ -95,4 +95,4 @@ Check the exact variable names in `examples/developer/.env.developer-demo` befor
 ## Known limits
 
 - `CARD_VAULT_KEY` is not set, so full card numbers are not captured and checkout swaps are off. Agent payments through `/agent/v1/pay` and MCP still work.
-- The working tree has uncommitted, untested changes (`src/chain/sim-deposit.ts`, `src/app/service.ts`, `src/app/server.ts`). The service ran fine with them at boot, but the payment path has not been confirmed since the IP changed.
+- The working tree has uncommitted, untested changes (`src/adapters/deposits/simDeposit.ts`, `src/lib/interactors/CardholderInteractor.ts`, `src/createHttpServer.ts`). The service ran fine with them at boot, but the payment path has not been confirmed since the IP changed.

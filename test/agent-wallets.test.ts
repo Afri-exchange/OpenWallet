@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Ledger } from "../src/ledger/ledger.js";
-import { AgentWallets } from "../src/agents/wallets.js";
+import { Ledger } from "../src/lib/services/Ledger.js";
+import { AgentWallets } from "../src/lib/services/AgentWallets.js";
 
 async function setup(clock = { d: new Date("2026-10-19T10:00:00Z") }) {
   const ledger = new Ledger(() => clock.d);

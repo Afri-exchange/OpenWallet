@@ -1,7 +1,7 @@
 // Read-only sandbox check: gets a token and lists wallet balances. Moves no money.
 // Prints status and response codes only, never credentials or the token.
 // Run: node --env-file=.env --import tsx scripts/sandbox-smoke.ts  (or export the MIDEN_* vars)
-import { MidenClient, MidenApiError, configFromEnv } from "../src/miden/client.js";
+import { MidenClient, MidenApiError, configFromEnv } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
 
 const client = new MidenClient(configFromEnv());
 try {

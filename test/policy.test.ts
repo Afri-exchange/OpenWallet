@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { evaluate } from "../src/cards/policy.js";
+import { evaluate } from "../src/lib/services/spendPolicy.js";
 
 const policy = { perTransactionCents: 5_000, dailyCents: 10_000, allowedMccs: ["5734"] };
 

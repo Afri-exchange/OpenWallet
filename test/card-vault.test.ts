@@ -2,11 +2,11 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { createCipheriv, randomBytes } from "node:crypto";
 import pg from "pg";
-import { CardService } from "../src/cards/service.js";
-import { MidenClient } from "../src/miden/client.js";
-import { decryptSecureCardDetails, parseExpiry } from "../src/miden/card-details.js";
-import { PgStore } from "../src/ledger/pg-store.js";
-import { MemoryCardVault, PgCardVault, vaultKeyFromEnv, type CardDetails } from "../src/vault/vault.js";
+import { CardService } from "../src/adapters/virtualCards/CardService.js";
+import { MidenClient } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
+import { decryptSecureCardDetails, parseExpiry } from "../src/lib/clients/cardIssuing/miden/cardDetails.js";
+import { PgLedgerStore } from "../src/db/repositories/PgLedgerStore.js";
+import { MemoryCardVault, PgCardVault, vaultKeyFromEnv, type CardDetails } from "../src/adapters/cardVault/CardVault.js";
 
 // The sample on docs.miden.co/decrypt-encrypted-card-details-copy.md (public, not a real card).
 const DOC_CLIENT_ID = "GEORGEDAUGHTERS4BF84D67844F4A3E94E884719E6DBDDF";
@@ -202,7 +202,7 @@ test("pg vault: sealed at rest, audited, rows bound to their card", { skip: !dat
   schemas.push(schema);
   const pool = new pg.Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 4 });
   pools.push(pool);
-  await new PgStore(pool).migrate();
+  await new PgLedgerStore(pool).migrate();
   const key = randomBytes(32);
   const v = new PgCardVault(pool, key);
   await v.put("c1", D);

@@ -2,8 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { decodeFunctionData, keccak256, parseTransaction, type Hex } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
-import { BASE_SEPOLIA_USDC } from "../src/chain/base-usdc-watcher.js";
-import { BASE_SEPOLIA_CHAIN_ID, UsdcPayoutRail } from "../src/chain/usdc-payout.js";
+import { BASE_SEPOLIA_USDC } from "../src/adapters/deposits/BaseUsdcWatcher.js";
+import { BASE_SEPOLIA_CHAIN_ID, UsdcPayoutRail } from "../src/adapters/payouts/UsdcPayoutRail.js";
 
 // Hardhat's well-known test mnemonic: never holds real funds.
 const account = mnemonicToAccount("test test test test test test test test test test test junk", { accountIndex: 1 });

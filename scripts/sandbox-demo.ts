@@ -1,4 +1,4 @@
-// End-to-end check of the running sandbox service (src/app/main.ts), driven exactly as a user and an agent would:
+// End-to-end check of the running sandbox service (src/main.ts), driven exactly as a user and an agent would:
 // sign up -> Card KYC (dummy data) -> card issued -> USDC deposit (simulated, or a real Base Sepolia one) ->
 // card topped up on Miden -> agent created and funded -> agent pays over MCP -> limits, idempotency, revocation.
 // MOVES SANDBOX MONEY. Prints no tokens.

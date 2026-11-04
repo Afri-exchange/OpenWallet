@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 /**
- * SPEC for the stablecoin base-unit -> ledger cents conversion. Implemented in src/ledger/units.ts.
+ * SPEC for the stablecoin base-unit -> ledger cents conversion. Implemented in src/lib/utils/units.ts.
  *
  * Proposed rule (agrees with Mira's "round down, log dust"):
  *  - Input is a bigint of base units (or a decimal string parsed without floats). Never a JS number:
@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 type Convert = (base: bigint, decimals: number) => { cents: number; dustBase: bigint };
 
 async function load(): Promise<Convert> {
-  const mod = (await import("../src/ledger/units.js" as string)) as { baseUnitsToCents: Convert };
+  const mod = (await import("../src/lib/utils/units.js" as string)) as { baseUnitsToCents: Convert };
   return mod.baseUnitsToCents;
 }
 

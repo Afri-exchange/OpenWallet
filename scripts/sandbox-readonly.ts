@@ -1,5 +1,5 @@
 // Sandbox only, read-only: probes USD account endpoints.
-import { MidenClient, MidenApiError } from "../src/miden/client.js";
+import { MidenClient, MidenApiError } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
 const c = new MidenClient({ baseUrl: "https://sandbox-api.midencards.io/miden", tokenUrl: "https://sandbox-identityserver.midencards.io/connect/token", clientId: process.env.MIDEN_CLIENT_ID!, clientSecret: process.env.MIDEN_CLIENT_SECRET!, uniqueKey: process.env.MIDEN_UNIQUE_KEY! });
 for (const p of process.argv.slice(2)) {
   try { const r = await c.request<any>("GET", p); console.log(p, "->", JSON.stringify(r).slice(0, 600)); }

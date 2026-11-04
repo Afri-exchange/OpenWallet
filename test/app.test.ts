@@ -4,16 +4,16 @@ import { randomBytes } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { request } from "node:http";
 import pg from "pg";
-import { AgentWallets } from "../src/agents/wallets.js";
-import { PgDepositAddresses } from "../src/chain/pg.js";
-import { DEFAULT_TIERS } from "../src/cards/tiers.js";
-import { MidenDuplicateReferenceError } from "../src/funding/miden-wallet.js";
-import type { FundingRequest } from "../src/funding/types.js";
-import { Ledger, accounts } from "../src/ledger/ledger.js";
-import { PgStore } from "../src/ledger/pg-store.js";
-import { MidenApiError } from "../src/miden/client.js";
-import { createAppServer } from "../src/app/server.js";
-import { AppService, midFor, type AppDeps } from "../src/app/service.js";
+import { AgentWallets } from "../src/lib/services/AgentWallets.js";
+import { PgDepositAddresses } from "../src/db/repositories/PgChainRepositories.js";
+import { DEFAULT_TIERS } from "../src/lib/services/tiers.js";
+import { MidenDuplicateReferenceError } from "../src/adapters/funding/MidenWalletFunding.js";
+import type { FundingRequest } from "../src/domain/interfaces/FundingSource.js";
+import { Ledger, accounts } from "../src/lib/services/Ledger.js";
+import { PgLedgerStore } from "../src/db/repositories/PgLedgerStore.js";
+import { MidenApiError } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
+import { createAppServer } from "../src/createHttpServer.js";
+import { CardholderInteractor, midFor, type CardholderContext } from "../src/lib/interactors/CardholderInteractor.js";
 
 // Runs only with DATABASE_URL (each case gets its own schema). Miden is faked; the sandbox run is scripts/sandbox-demo.ts.
 const databaseUrl = process.env.DATABASE_URL;
@@ -87,18 +87,18 @@ async function setup() {
   schemas.push(schema);
   const pool = new pg.Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 6 });
   pools.push(pool);
-  const store = new PgStore(pool);
+  const store = new PgLedgerStore(pool);
   await store.migrate();
   const ledger = new Ledger(undefined, store);
   const { f, deps } = fakeMiden();
-  const make = (over: Partial<AppDeps> = {}) => {
+  const make = (over: Partial<CardholderContext> = {}) => {
     const d = {
       pool, ledger, wallets: new AgentWallets(ledger), addresses: new PgDepositAddresses(pool, "base-sepolia"),
       deriveAddress: (i: number) => `0x${i.toString(16).padStart(40, "0")}`, tiers: DEFAULT_TIERS, chain: "base-sepolia", sandbox: true, simulatedDeposits: true,
       ...deps,
       ...over,
-    } as unknown as AppDeps;
-    return new AppService(d);
+    } as unknown as CardholderContext;
+    return new CardholderInteractor(d);
   };
   const app = make();
   const { userId, token } = await app.signup(`u${randomBytes(3).toString("hex")}@example.com`);
@@ -232,7 +232,7 @@ test("restart: daily totals are restored; an interrupted payment stays held unti
     "INSERT INTO app_spend (spend_id, card_id, agent_id, idempotency_key, amount_cents, merchant, status) VALUES ('sp_crash', $1, $2, 'kc', 200, 'M', 'processing')",
     [p.cardId, p.agentId],
   );
-  const status = async (app: AppService) => (await app.agentTransactions(p)).find((t) => t.spendId === "sp_crash")!.status;
+  const status = async (app: CardholderInteractor) => (await app.agentTransactions(p)).find((t) => t.spendId === "sp_crash")!.status;
 
   const fresh = s.make();
   await fresh.restore();
@@ -372,11 +372,11 @@ test("money waiting in holding says why", { skip }, async () => {
 
 test("HTTP: Host guard, token checks, and MCP needs an agent token", { skip }, async () => {
   const s = await setup();
-  const server = createAppServer(s.app, { allowedHosts: [] });
+  const server = createAppServer({ cardholders: s.app }, { allowedHosts: [] });
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const port = (server.address() as AddressInfo).port;
   server.close();
-  const real = createAppServer(s.app, { allowedHosts: [`127.0.0.1:${port}`] });
+  const real = createAppServer({ cardholders: s.app }, { allowedHosts: [`127.0.0.1:${port}`] });
   await new Promise<void>((r) => real.listen(port, "127.0.0.1", r));
   try {
     const url = `http://127.0.0.1:${port}`;

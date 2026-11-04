@@ -1,6 +1,6 @@
 # Sandbox flow: KYC, handover to the agent, and the agent paying
 
-Status: documents the code as it stands on 2026-10-19 (`src/app/*`, `src/users/onboarding.ts`, `src/agents/wallets.ts`). Mira is still building parts of this; where something is a placeholder or unverified it is marked **OPEN**. The service is **sandbox-only**: `src/app/main.ts` refuses to start unless `MIDEN_BASE_URL` contains `sandbox`.
+Status: documents the code as it stands on 2026-10-19 (`src/lib/interactors/CardholderInteractor.ts`, `src/adapters/onboarding/onboarding.ts`, `src/lib/services/AgentWallets.ts`). Mira is still building parts of this; where something is a placeholder or unverified it is marked **OPEN**. The service is **sandbox-only**: `src/main.ts` refuses to start unless `MIDEN_BASE_URL` contains `sandbox`.
 
 ## The model in one paragraph
 
@@ -25,7 +25,7 @@ agent ──MCP /mcp or REST /agent/v1──► pay ──► policy + sub-balan
 ```
 export MIDEN_CLIENT_ID=… MIDEN_CLIENT_SECRET=… MIDEN_UNIQUE_KEY=…     # already set in the office shell
 export DATABASE_URL=postgres://localhost/agent_cards                  # default if unset
-node --import tsx src/app/main.ts
+node --import tsx src/main.ts
 ```
 
 | Variable | Default | Meaning |
@@ -33,19 +33,19 @@ node --import tsx src/app/main.ts
 | `MIDEN_CLIENT_ID`, `MIDEN_CLIENT_SECRET`, `MIDEN_UNIQUE_KEY` | required | Miden credentials. Never print or commit them. |
 | `MIDEN_BASE_URL` | Miden sandbox | Must contain `sandbox` or the service throws at boot. |
 | `MIDEN_TOKEN_URL` | Miden sandbox identity server | |
-| `DATABASE_URL` | `postgres://localhost/agent_cards` | Migrations run at boot (`PgStore.migrate()`). |
+| `DATABASE_URL` | `postgres://localhost/agent_cards` | Migrations run at boot (`PgLedgerStore.migrate()`). |
 | `PORT` / `HOST` | `8787` / `127.0.0.1` | Localhost only by design. |
 | `ALLOWED_HOSTS` | none | Extra `Host` header values accepted (see DNS-rebinding guard below). |
 | `BASE_RPC_URL` | `https://base-sepolia-rpc.publicnode.com` | See [deposit-watcher.md](deposit-watcher.md). |
 | `DEPOSIT_WALLET_FILE` | `.sandbox-wallet.json` | See [sandbox-wallets.md](sandbox-wallets.md). |
 
-On boot `main.ts` also: restores agent state from Postgres (`AppService.restore()`), starts the chain watcher, and starts a 5-second background loop that finishes pending KYCs (`refresh`) and funds cards (`fundPending`).
+On boot `main.ts` also: restores agent state from Postgres (`CardholderInteractor.restore()`), starts the chain watcher, and starts a 5-second background loop that finishes pending KYCs (`refresh`) and funds cards (`fundPending`).
 
 ## HTTP surface
 
 | Path | Auth | Purpose |
 | --- | --- | --- |
-| `GET /`, `/docs`, `/app` | none | Landing page, documentation, owner dashboard + developer section (static files in `src/app/web/`). |
+| `GET /`, `/docs`, `/app` | none | Landing page, documentation, owner dashboard + developer section (static files in `src/presentation/web/`). |
 | `GET /healthz` | none | `{ ok: true }`. |
 | `POST /api/signup` | none | Body `{ email }` → `201 { userId, token }`. Token starts `uk_`, shown once. |
 | `GET /api/me` | `uk_` | Overview (KYC status, card, balances, deposit address, agents). |
@@ -62,7 +62,7 @@ Every request must carry an allowed `Host` header (`127.0.0.1:<port>`, `localhos
 
 ## Stage 1: signup and KYC
 
-1. **Signup** (`AppService.signup`): email is lower-cased and validated; a `uk_…` token is generated, and only its SHA-256 is stored. Duplicate email → 409. There is no password; the token *is* the credential (the dashboard keeps it in `localStorage`).
+1. **Signup** (`CardholderInteractor.signup`): email is lower-cased and validated; a `uk_…` token is generated, and only its SHA-256 is stored. Duplicate email → 409. There is no password; the token *is* the credential (the dashboard keeps it in `localStorage`).
 2. **Submit KYC** (`submitKyc`, `POST /api/me/kyc`). Required fields: `firstName`, `lastName`, `dateOfBirth` (`YYYY-MM-DD`), `idType` (`PASSPORT`, `NATIONAL_ID`, `DRIVERS_LICENSE`, `VOTERS_CARD`; upper-cased for you), `idNumber`, `phone`, `email`, `idFrontImage` (PNG/JPEG data URI, ≤ 1.5 MB of text), and `address{address1, city, state, zipcode, country}`.
    - Sent to Miden `POST /api/v1/cards/kyc-submit` as `customerType: "Individual"`.
    - **Identity data is never stored or logged by us.** We keep only `kyc_reference` and `kyc_status` on `app_user`.
@@ -75,7 +75,7 @@ Every request must carry an allowed `Host` header (`127.0.0.1:<port>`, `localhos
 
 ### Tiers (the limits on the owner's card)
 
-`src/cards/tiers.ts`: `quick` and `full`. New users are `quick`. Limits cap the card's per-transaction and daily amounts and the **lifetime amount that may be loaded onto the card**.
+`src/lib/services/tiers.ts`: `quick` and `full`. New users are `quick`. Limits cap the card's per-transaction and daily amounts and the **lifetime amount that may be loaded onto the card**.
 
 | Tier | Per transaction | Per day | Lifetime funded |
 | --- | --- | --- | --- |
@@ -102,7 +102,7 @@ Hand the agent two things: the token, and where to connect.
 
 ## Stage 4: the agent transacts
 
-Two equivalent connections; both end in `AppService.pay`.
+Two equivalent connections; both end in `CardholderInteractor.pay`.
 
 ### A. MCP over HTTP (preferred)
 
@@ -116,10 +116,10 @@ For Claude Code: `claude mcp add --transport http agent-cards http://127.0.0.1:8
 
 ### B. MCP over stdio (agents that launch local tool processes)
 
-`src/app/mcp-stdio.ts` is a bridge to the REST API:
+`src/startMcpStdio.ts` is a bridge to the REST API:
 
 ```
-AGENT_CARDS_URL=http://127.0.0.1:8787 AGENT_CARDS_TOKEN=ak_… node --import tsx src/app/mcp-stdio.ts
+AGENT_CARDS_URL=http://127.0.0.1:8787 AGENT_CARDS_TOKEN=ak_… node --import tsx src/startMcpStdio.ts
 ```
 
 Exits with an error if `AGENT_CARDS_TOKEN` is unset.
@@ -142,7 +142,7 @@ Exits with an error if `AGENT_CARDS_TOKEN` is unset.
 
 The server's MCP `instructions` tell the agent to check `get_wallet` first and to use a fresh idempotency key per purchase.
 
-### What `pay` does (`AppService.pay` / `doPay`)
+### What `pay` does (`CardholderInteractor.pay` / `doPay`)
 
 1. Validate amount (positive integer cents), merchant (≤ 80), `mcc` (4 digits if present).
 2. Idempotency: the key is scoped to (card, agent). A repeat of the same key with the same amount/merchant/mcc returns the original result without charging again; the same key with a different payment → 409. No key supplied → a random one is generated (so retries without a key are *not* deduplicated). Concurrent attempts on one key are serialised in-process; `UNIQUE (card_id, agent_id, idempotency_key)` backs that up.

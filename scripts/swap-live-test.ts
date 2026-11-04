@@ -15,12 +15,12 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import pg from "pg";
-import { CardLifecycle, type CardTransaction } from "../src/cards/lifecycle.js";
-import { MidenClient } from "../src/miden/client.js";
-import { PgCardVault, vaultKeyFromEnv, type CardDetails } from "../src/vault/vault.js";
-import { PlaywrightFiller } from "../src/checkout-swap/playwright-filler.js";
-import { scrub, type FillResult } from "../src/checkout-swap/filler.js";
-import { DEFAULT_SWAP_HOSTS, parseCardTime } from "../src/checkout-swap/swap.js";
+import { CardLifecycle, type CardTransaction } from "../src/adapters/virtualCards/CardLifecycle.js";
+import { MidenClient } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
+import { PgCardVault, vaultKeyFromEnv, type CardDetails } from "../src/adapters/cardVault/CardVault.js";
+import { PlaywrightFiller } from "../src/adapters/checkoutFillers/PlaywrightFiller.js";
+import { scrub, type FillResult } from "../src/adapters/checkoutFillers/CheckoutFiller.js";
+import { DEFAULT_SWAP_HOSTS, parseCardTime } from "../src/lib/interactors/SwapInteractor.js";
 
 const LIVE_CAP_CENTS = 1_000; // not configurable: raising it is a code change and a review
 const SANDBOX_HOST = "sandbox-api.midencards.io";

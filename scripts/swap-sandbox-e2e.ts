@@ -9,14 +9,14 @@
 // --persist). Otherwise it captures the card's details into a throwaway in-memory vault through Miden's full-PAN
 // endpoint (Kai's CardService.captureDetails). Prints last four only. Sandbox host only: refuses anything else.
 import pg from "pg";
-import { CardLifecycle, type CardTransaction } from "../src/cards/lifecycle.js";
-import { CardService } from "../src/cards/service.js";
-import { MidenClient } from "../src/miden/client.js";
-import { MemoryCardVault, PgCardVault, vaultKeyFromEnv, type CardDetails, type CardVault } from "../src/vault/vault.js";
-import { PlaywrightFiller } from "../src/checkout-swap/playwright-filler.js";
-import { startCheckoutFixture } from "../src/checkout-swap/fixture.js";
-import { scrub } from "../src/checkout-swap/filler.js";
-import { parseCardTime } from "../src/checkout-swap/swap.js";
+import { CardLifecycle, type CardTransaction } from "../src/adapters/virtualCards/CardLifecycle.js";
+import { CardService } from "../src/adapters/virtualCards/CardService.js";
+import { MidenClient } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
+import { MemoryCardVault, PgCardVault, vaultKeyFromEnv, type CardDetails, type CardVault } from "../src/adapters/cardVault/CardVault.js";
+import { PlaywrightFiller } from "../src/adapters/checkoutFillers/PlaywrightFiller.js";
+import { startCheckoutFixture } from "../src/adapters/checkoutFillers/fixtures/stripeFixture.js";
+import { scrub } from "../src/adapters/checkoutFillers/CheckoutFiller.js";
+import { parseCardTime } from "../src/lib/interactors/SwapInteractor.js";
 
 const SANDBOX = "https://sandbox-api.midencards.io/miden";
 const env = process.env;

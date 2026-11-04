@@ -2,18 +2,18 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import pg from "pg";
-import { AgentWallets } from "../src/agents/wallets.js";
-import { PgDepositAddresses } from "../src/chain/pg.js";
-import { DEFAULT_TIERS } from "../src/cards/tiers.js";
-import { MidenBusinessError } from "../src/cards/lifecycle.js";
-import { CardService, ONE_TIME_TERMINATE_DAYS } from "../src/cards/service.js";
-import type { FundingRequest } from "../src/funding/types.js";
-import { Ledger } from "../src/ledger/ledger.js";
-import { PgStore } from "../src/ledger/pg-store.js";
-import { MidenApiError } from "../src/miden/client.js";
-import { AppService, midFor, type AppDeps } from "../src/app/service.js";
-import { DeveloperService } from "../src/developers/service.js";
-import { MemoryCardVault } from "../src/vault/vault.js";
+import { AgentWallets } from "../src/lib/services/AgentWallets.js";
+import { PgDepositAddresses } from "../src/db/repositories/PgChainRepositories.js";
+import { DEFAULT_TIERS } from "../src/lib/services/tiers.js";
+import { MidenBusinessError } from "../src/adapters/virtualCards/CardLifecycle.js";
+import { CardService, ONE_TIME_TERMINATE_DAYS } from "../src/adapters/virtualCards/CardService.js";
+import type { FundingRequest } from "../src/domain/interfaces/FundingSource.js";
+import { Ledger } from "../src/lib/services/Ledger.js";
+import { PgLedgerStore } from "../src/db/repositories/PgLedgerStore.js";
+import { MidenApiError } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
+import { CardholderInteractor, midFor, type CardholderContext } from "../src/lib/interactors/CardholderInteractor.js";
+import { DeveloperInteractor } from "../src/lib/interactors/DeveloperInteractor.js";
+import { MemoryCardVault } from "../src/adapters/cardVault/CardVault.js";
 
 // Runs only with DATABASE_URL (each case gets its own schema). Miden is faked.
 const databaseUrl = process.env.DATABASE_URL;
@@ -38,8 +38,8 @@ async function setup() {
   schemas.push(schema);
   const pool = new pg.Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 6 });
   pools.push(pool);
-  await new PgStore(pool).migrate();
-  const ledger = new Ledger(undefined, new PgStore(pool));
+  await new PgLedgerStore(pool).migrate();
+  const ledger = new Ledger(undefined, new PgLedgerStore(pool));
   let cards = 0;
   const f = {
     mainFundCalls: [] as FundingRequest[],
@@ -78,14 +78,14 @@ async function setup() {
     },
     funding: { fund: async (r: FundingRequest) => (f.mainFundCalls.push(r), { id: "m1", status: "confirmed" as const }) },
   };
-  let dev: DeveloperService | undefined;
-  const app = new AppService({
+  let dev: DeveloperInteractor | undefined;
+  const app = new CardholderInteractor({
     pool, ledger, wallets: new AgentWallets(ledger), addresses: new PgDepositAddresses(pool, "base-sepolia"),
     deriveAddress: (i: number) => `0x${i.toString(16).padStart(40, "0")}`, tiers: DEFAULT_TIERS, chain: "base-sepolia", sandbox: true, simulatedDeposits: true,
     onEvent: (u: string, t: string, d: Record<string, unknown>) => dev?.onEvent(u, t, d) ?? Promise.resolve(),
     ...deps,
-  } as unknown as AppDeps);
-  dev = new DeveloperService({ pool, app, allowLocalWebhooks: false, publicUrl: "https://cards.example", resolve: async () => ["93.184.216.34"] });
+  } as unknown as CardholderContext);
+  dev = new DeveloperInteractor({ pool, app, allowLocalWebhooks: false, publicUrl: "https://cards.example", resolve: async () => ["93.184.216.34"] });
   return { pool, app, dev, f };
 }
 type S = Awaited<ReturnType<typeof setup>>;

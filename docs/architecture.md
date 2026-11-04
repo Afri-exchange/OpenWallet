@@ -2,7 +2,7 @@
 
 How agent-cards is built: the parts, how money and data move between them, and why it is shaped this way. This is the map. The per-area docs (linked throughout) hold the detail and the runbooks.
 
-Written 2026-10-26 from the code on `main` plus the working tree. **Sandbox only:** `src/app/main.ts` refuses to start unless `MIDEN_BASE_URL` is the Miden sandbox. What blocks production is in [production-gaps.md](production-gaps.md) and [checkout-payouts.md](checkout-payouts.md#before-mainnet).
+Written 2026-10-26 from the code on `main` plus the working tree. **Sandbox only:** `src/main.ts` refuses to start unless `MIDEN_BASE_URL` is the Miden sandbox. What blocks production is in [production-gaps.md](production-gaps.md) and [checkout-payouts.md](checkout-payouts.md#before-mainnet).
 
 ## Contents
 
@@ -47,11 +47,11 @@ flowchart LR
   end
 
   subgraph Service["agent-cards service (one Node process)"]
-    HTTP["HTTP + MCP server<br/>src/app/server.ts, mcp.ts"]
-    App["AppService<br/>signup, KYC, agents, pay, funding"]
-    Checkout["CheckoutService<br/>checkouts, settlement, payouts"]
-    Swap["SwapService<br/>hosted-checkout payments"]
-    DevSvc["DeveloperService<br/>users, sessions, webhooks"]
+    HTTP["HTTP + MCP<br/>routes -> controllers"]
+    App["CardholderInteractor<br/>signup, KYC, agents, pay, funding"]
+    Checkout["CheckoutInteractor<br/>checkouts, settlement, payouts"]
+    Swap["SwapInteractor<br/>hosted-checkout payments"]
+    DevSvc["DeveloperInteractor<br/>users, sessions, webhooks"]
     Ledger["Ledger<br/>double entry"]
     Vault["CardVault<br/>AES-256-GCM"]
     BG["Background loop (5 s)<br/>+ chain watchers (4 s)"]
@@ -128,40 +128,58 @@ These are the choices that shape everything else. Most were made by the boss; th
 
 ### 5.1 Source layout
 
+The service follows the Afriex server's layering (`afriex-server/packages/server/src`):
+
+```
+routes/ -> controllers/ -> lib/interactors/ -> lib/services/ -> db/repositories/
+                                            -> adapters/     -> lib/clients/ (external APIs)
+```
+
+Wired at the top by `bootstrap.ts` (env -> `AppParams`) and `createApp.ts` (`AppParams` -> interactors).
+
 | Path | Responsibility |
 | --- | --- |
-| `src/miden/` | `MidenClient` (OAuth token, signed requests, `Reference` header), request signing, card-detail decryption and full-PAN fetch |
-| `src/funding/` | `FundingSource` interface; `MidenWalletFunding` (top-ups from the Miden USD wallet) |
-| `src/cards/` | `CardService` (issue, top-up, advisory `authorize`), `CardLifecycle` (KYC status, issuance), `SpendPolicy` + `evaluate()`, tiers |
-| `src/agents/wallets.ts` | `AgentWallets`: agent sub-balances and the `spend()` check order |
-| `src/ledger/` | `Ledger` (double entry), `PgStore` / `MemoryStore`, `units.ts` (bigint conversion), SQL migrations |
-| `src/chain/` | `BaseUsdcWatcher`, `PgCursor` + `PgDepositAddresses`, `UsdcPayoutRail`, `sim-deposit.ts` (sandbox simulator) |
-| `src/users/onboarding.ts` | Card KYC form validation and the Miden submission |
-| `src/vault/vault.ts` | `PgCardVault`: encrypted card details with an audit trail |
-| `src/checkout-swap/` | `SwapService` and the per-provider fillers (Stripe, Shopify, Lemon Squeezy, Paddle), each with a local fixture page |
-| `src/developers/service.ts` | `DeveloperService`: developer accounts, users, sessions, event delivery |
-| `src/webhooks/signature.ts` | Miden's webhook signature scheme (documented, not yet seen live) |
-| `src/app/` | The service: `main.ts` (wiring), `server.ts` (HTTP), `mcp.ts` + `mcp-stdio.ts`, `service.ts` (`AppService`), `checkout.ts`, `payouts.ts`, `hd-wallet.ts`, static `web/` |
+| `src/main.ts` | Entry point: bootstrap, createApp, restore, start workers and the HTTP server, shut down on signals |
+| `src/bootstrap.ts` | Reads the environment once; builds every client, repository and adapter into `AppParams` (`domain/types/ContextTypes.ts`). Sandbox guards live here |
+| `src/createApp.ts` | Builds the interactors from `AppParams`; `AgentCardsApp` is what controllers receive |
+| `src/startAppServer.ts`, `src/createHttpServer.ts` | Listens on IPv4 + IPv6 loopback; request guards, router, error handler |
+| `src/startBackgroundWorkers.ts` | Chain watchers and the 5-second background tick |
+| `src/startMcpStdio.ts` | MCP over stdio, a bridge to the agent REST API |
+| `src/errors.ts` | `AgentCardsError` + `ErrorCodes` and the factories (`badRequestError`, `notFoundError`, `conflictError`, ...); the code picks the HTTP status |
+| `src/router.ts`, `src/routes/` | Route tables per surface: `publicRouter`, `webhooksRouter`, `mcpRouter`, `agentRouter`, `merchantRouter`, `developerRouter`, `ownerRouter` |
+| `src/controllers/` | One file per surface. Read `req.params` / `req.body` / `req.callerId` / `req.agent`, call one interactor, send the response. No business logic |
+| `src/lib/middleware/` | `requestGuards` (Host, Origin, JSON-only POST, webhook-only hosts), `auth` (`authorizeUser`, `authorizeAgent`, `authorizeMerchant`, `authorizeDeveloper`), `bodyParser` (`jsonBody`, `rawBody`) |
+| `src/lib/http/` | `Router` (a small Express-shaped router over `node:http`) and `sendJson` |
+| `src/lib/interactors/` | Use cases: `CardholderInteractor` (signup, KYC, card, deposits, agents, `pay`, reconcile), `CheckoutInteractor`, `PayoutInteractor`, `SwapInteractor`, `DeveloperInteractor` |
+| `src/lib/services/` | Business rules: `Ledger` (double entry), `AgentWallets` (agent sub-balances, `spend()` check order), `spendPolicy` (`evaluate()`), `tiers` |
+| `src/lib/clients/` | External API clients: `cardIssuing/miden/` (`MidenClient`, request signing, card-detail decryption, webhook signature) and `circle/CircleClient` |
+| `src/adapters/` | Our side of each integration: `virtualCards/` (`CardService`, `CardLifecycle`), `funding/` (`MidenWalletFunding`), `deposits/` (`BaseUsdcWatcher`, `CircleDeposits` webhook processor, `simDeposit`), `payouts/` (`UsdcPayoutRail`), `checkoutFillers/` (Stripe, Shopify, Lemon Squeezy, Paddle, with local fixtures), `cardVault/` (`PgCardVault`), `wallet/` (`HdDepositWallet`), `onboarding/` (Card KYC) |
+| `src/db/repositories/` | `PgLedgerStore`, `MemoryLedgerStore`, `PgCursor` + `PgDepositAddresses` |
+| `src/db/migrations/` | SQL migrations, applied in order at boot |
+| `src/domain/` | `interfaces/` (`FundingSource`), `repositories/` (`LedgerStore`), `types/` (`AppParams`, `AppRequest`) |
+| `src/presentation/` | Static site (`web/`), `staticFiles.ts`, the checkout page, the agent MCP server definition |
 | `sdk/checkout/` | `@agent-cards/checkout`, the merchant and agent client SDK |
 | `examples/` | `shop/` (a complete merchant) and `developer/` (runnable demos of the developer API) |
 | `scripts/` | Sandbox bring-up, quickstart, end-to-end demo, Miden probes, swap rehearsals |
 | `test/` | `node:test` suites |
 
-`src/index.ts` is the library surface: `MidenClient`, `CardService`, `evaluate`, `Ledger`, the stores, the watcher and `DeveloperService`.
+Not yet ported: the interactors still hold their own SQL. Afriex keeps queries in `db/repositories/` behind interfaces in `domain/repositories/`; moving them there is the next step (see [production-gaps.md](production-gaps.md)).
 
-### 5.2 Wiring (`src/app/main.ts`)
+`src/index.ts` is the library surface: `MidenClient`, `CardService`, `evaluate`, `Ledger`, the stores, the watcher, `DeveloperInteractor` and the errors.
 
-`main.ts` is the composition root. In order it:
+### 5.2 Wiring (`bootstrap.ts`, `createApp.ts`, `main.ts`)
 
-1. Checks the sandbox guard, opens the Postgres pool (10 connections), and runs migrations (`PgStore.migrate()`, under an advisory lock).
+`bootstrapApplication(env)` is the only code that reads the environment. In order it:
+
+1. Checks the sandbox guard, opens the Postgres pool (10 connections), and runs migrations (`PgLedgerStore.migrate()`, under an advisory lock).
 2. Builds `Ledger`, `MidenClient`, `CardLifecycle`, `MidenWalletFunding`, the optional `PgCardVault` (needs `CARD_VAULT_KEY`), `CardService`, `AgentWallets`, and the HD deposit wallet.
-3. Builds `AppService` and calls `app.restore()` to repair interrupted state.
-4. Builds `DeveloperService`. The two services reference each other (the app reports events, the developer service delivers them), so the link is a late binding.
-5. Builds `CheckoutService` and, if `SWAP_ENABLED=1`, `SwapService`.
-6. Starts one `BaseUsdcWatcher` per network (Base Sepolia, Ethereum Sepolia) and the `PayoutSender`.
-7. Starts the 5-second background loop, then the HTTP servers on `127.0.0.1` **and** `::1` (it refuses to run if either bind fails, so another process cannot silently receive tokens on the other loopback).
+3. Builds the Circle client and `CircleDeposits` when `CIRCLE_API_KEY` is set, the networks to watch, the payout rail and the swap config.
 
-### 5.3 `AppService` (`src/app/service.ts`)
+`createApp(params)` builds `CardholderInteractor`, `DeveloperInteractor` (the two reference each other: the cardholder side reports events, the developer side delivers them, so the link is a late binding), `CheckoutInteractor`, `SwapInteractor` (only if `SWAP_ENABLED=1` and a vault) and `PayoutInteractor`.
+
+`main.ts` then calls `cardholders.restore()` to repair interrupted state, starts the background workers (one `BaseUsdcWatcher` per watched network, plus the 5-second tick), and starts the HTTP servers on `127.0.0.1` **and** `::1` (it refuses to run if either bind fails, so another process cannot silently receive tokens on the other loopback).
+
+### 5.3 `CardholderInteractor` (`src/lib/interactors/CardholderInteractor.ts`)
 
 The core application service and the biggest file. It owns:
 
@@ -174,9 +192,9 @@ The core application service and the biggest file. It owns:
 - **Privacy mode**: when on, each payment is charged to a fresh one-time (Miden Lite) card.
 - **Reconciliation** (`reconcileSpends`) and crash recovery (`restore`).
 
-### 5.4 Server (`src/app/server.ts`, `mcp.ts`)
+### 5.4 Server (`src/createHttpServer.ts`, `src/router.ts`)
 
-A plain `node:http` router. Cross-cutting rules, applied before routing:
+`node:http` with a small Express-shaped `Router` (`src/lib/http/Router.ts`). A request goes `requestGuards` -> `router.ts` -> a route in `routes/` (its auth and body middleware) -> a controller -> an interactor. Mounted APIs (`/agent/v1/`, `/merchant/v1/`, `/developer/v1/`, `/api/me`) run their auth before route matching, so an unknown path under them is a 401 without a token and a 404 with one. Cross-cutting rules, applied before routing:
 
 - **Host allowlist** (421 otherwise): a web page on another site cannot reach the service through DNS rebinding.
 - **Origin check and JSON-only POST** (403 / 415): forces a CORS preflight, so cross-site forms cannot post.
@@ -192,25 +210,25 @@ A plain `node:http` router. Cross-cutting rules, applied before routing:
 | Developer | `dk_` | `/developer/v1/signup`, `/me`, `/key`, `/settings`, `/events`, `/users[...]` |
 | Public | none | `/`, `/docs`, `/app`, `/connect`, `/healthz`, `/pay/cs_...`, `/v1/checkouts/cs_...` |
 
-MCP tools: `get_wallet`, `pay`, `list_transactions`, `get_checkout`, `pay_checkout`, `pay_hosted_checkout`, `get_hosted_checkout_payment`. MCP `pay` takes **dollars**; REST takes **cents**. Responses from both are in cents. `src/app/mcp-stdio.ts` is a stdio bridge to the REST API for agents that launch local tool processes.
+MCP tools: `get_wallet`, `pay`, `list_transactions`, `get_checkout`, `pay_checkout`, `pay_hosted_checkout`, `get_hosted_checkout_payment`. MCP `pay` takes **dollars**; REST takes **cents**. Responses from both are in cents. `src/startMcpStdio.ts` is a stdio bridge to the REST API for agents that launch local tool processes.
 
-### 5.5 `CheckoutService` and `PayoutSender`
+### 5.5 `CheckoutInteractor` and `PayoutInteractor`
 
-- **Checkout** (`checkout.ts`): a merchant creates a fixed-price checkout (`cs_...`). An agent pays it, as an ordinary `AppService.pay`, so agent and card limits, the MCC allowlist and idempotency all apply. A checkout is paid **at most once** (atomic claim, plus a per-attempt spend key `checkout:<id>:<n>`; keys with the `checkout:` prefix are reserved).
+- **Checkout** (`checkout.ts`): a merchant creates a fixed-price checkout (`cs_...`). An agent pays it, as an ordinary `CardholderInteractor.pay`, so agent and card limits, the MCC allowlist and idempotency all apply. A checkout is paid **at most once** (atomic claim, plus a per-attempt spend key `checkout:<id>:<n>`; keys with the `checkout:` prefix are reserved).
 - **Settlement**: when a checkout becomes `paid`, `external:merchant -> merchant:<id>` is credited once (key `checkout-settle:<id>`). `sync()` heals a crash between the two steps via `app_checkout.settled_seq`.
-- **Payouts**: a merchant sets a payout address (new addresses wait `PAYOUT_ADDRESS_DELAY_S` before they can be paid). A payout is **reserved first** (`merchant -> payout_pending`), then `PayoutSender` signs a USDC transfer from our payout account at an explicit nonce, stores the signed bytes, then broadcasts. A lost answer is rebroadcast with the same bytes, so it mines at most once. Only a definite answer completes or releases the reservation. One sender across processes is enforced by a Postgres advisory lock.
+- **Payouts**: a merchant sets a payout address (new addresses wait `PAYOUT_ADDRESS_DELAY_S` before they can be paid). A payout is **reserved first** (`merchant -> payout_pending`), then `PayoutInteractor` signs a USDC transfer from our payout account at an explicit nonce, stores the signed bytes, then broadcasts. A lost answer is rebroadcast with the same bytes, so it mines at most once. Only a definite answer completes or releases the reservation. One sender across processes is enforced by a Postgres advisory lock.
 
 See [checkout-payouts.md](checkout-payouts.md) and [ops.md](ops.md).
 
-### 5.6 `SwapService` (hosted-checkout payments)
+### 5.6 `SwapInteractor` (hosted-checkout payments)
 
 An agent can pay a third-party hosted checkout page (Stripe, Shopify, Lemon Squeezy, Paddle). The agent sends the URL and the exact price it agreed to; our server opens the page in headless Chromium and types the owner's real card, read from the vault. The agent never sees the card.
 
-Order of operations matters and is the whole design: validate (feature on, host allowlisted, amount under the cap, key present, card in vault) -> **debit through `AppService.pay`** -> reveal card details (audited) just before the page -> fill and submit -> scrub the details in a `finally` -> map the outcome back to the spend. Anything ambiguous (3-D Secure, captcha after submit, timeout) leaves the money **held** as `processing`, and a reconcile step matches it against the card's real Miden authorization by amount and time. Statuses: `paid`, `failed`, `challenge`, `processing`, `needs_review`. Full detail in [checkout-swap.md](checkout-swap.md).
+Order of operations matters and is the whole design: validate (feature on, host allowlisted, amount under the cap, key present, card in vault) -> **debit through `CardholderInteractor.pay`** -> reveal card details (audited) just before the page -> fill and submit -> scrub the details in a `finally` -> map the outcome back to the spend. Anything ambiguous (3-D Secure, captcha after submit, timeout) leaves the money **held** as `processing`, and a reconcile step matches it against the card's real Miden authorization by amount and time. Statuses: `paid`, `failed`, `challenge`, `processing`, `needs_review`. Full detail in [checkout-swap.md](checkout-swap.md).
 
 Fillers share a `PageFiller` interface (`filler.ts`); `RoutingFiller` picks one from the URL. Only the Stripe filler has been proven against a real test-mode page; the others are tested against local mock fixtures.
 
-### 5.7 `DeveloperService`
+### 5.7 `DeveloperInteractor`
 
 Developers embed agent-cards in their product. They sign up for a `dk_` key, create users keyed by their own `externalId` (idempotent), mint short-lived `us_` sessions for the hosted `/connect` page (KYC and spend controls), and create agents. State changes are reported to the developer as **signed webhooks**: `kyc.updated`, `card.issued`, `funding.completed`, `spend.settled`.
 
@@ -219,7 +237,7 @@ Developers embed agent-cards in their product. They sign up for a `dk_` key, cre
 
 See [developers.md](developers.md).
 
-### 5.8 Card vault (`src/vault/vault.ts`)
+### 5.8 Card vault (`src/adapters/cardVault/CardVault.ts`)
 
 When `CARD_VAULT_KEY` (32 random bytes, base64) is set, card details are captured from Miden at issue time and sealed into `card_vault`:
 
@@ -270,7 +288,7 @@ Balances come from the ledger. Operational state (why a movement exists, its sta
 ```mermaid
 sequenceDiagram
   participant O as Owner
-  participant S as AppService
+  participant S as CardholderInteractor
   participant M as Miden
   participant DB as Postgres
   O->>S: POST /api/signup {email}
@@ -317,7 +335,7 @@ The watcher re-checks every log (provider filters are not trusted), floors to wh
 
 ### 7.3 An agent payment
 
-`AppService.pay` is the single path for MCP `pay`, REST `/agent/v1/pay`, checkouts and hosted checkouts.
+`CardholderInteractor.pay` is the single path for MCP `pay`, REST `/agent/v1/pay`, checkouts and hosted checkouts.
 
 1. Validate amount, merchant, MCC.
 2. **Idempotency**, scoped to (card, agent). Same key and same payment returns the original result; same key and a different payment is 409. No key means a random one (no dedupe).
@@ -328,11 +346,11 @@ The watcher re-checks every log (provider filters are not trusted), floors to wh
 
 ### 7.4 Checkout and payout
 
-Merchant creates `cs_...` -> agent pays it through step 7.3 -> checkout `paid` -> `merchant:<id>` credited once -> merchant requests a payout -> reserved -> `PayoutSender` signs, broadcasts, waits 5 confirmations -> `sent`, or `failed` and the money returns. A nonce collision sets `needs_review` and stops the queue (runbook in [ops.md](ops.md)).
+Merchant creates `cs_...` -> agent pays it through step 7.3 -> checkout `paid` -> `merchant:<id>` credited once -> merchant requests a payout -> reserved -> `PayoutInteractor` signs, broadcasts, waits 5 confirmations -> `sent`, or `failed` and the money returns. A nonce collision sets `needs_review` and stops the queue (runbook in [ops.md](ops.md)).
 
 ## 8. Data model
 
-Migrations are `src/ledger/migrations/001..011`, applied in order at boot and recorded in `ledger_migrations`.
+Migrations are `src/db/migrations/001..011`, applied in order at boot and recorded in `ledger_migrations`.
 
 | Migration | Adds |
 | --- | --- |
@@ -370,12 +388,12 @@ Three different "wallets" exist and are easy to confuse: the **deposit wallet** 
 
 ## 10. Process model and background work
 
-One Node process, started with `node --import tsx src/app/main.ts` (or `scripts/sandbox-up.sh`).
+One Node process, started with `node --import tsx src/main.ts` (or `scripts/sandbox-up.sh`).
 
 | Loop | Interval | Does |
 | --- | --- | --- |
 | Chain watcher x2 | 4 s when caught up (drains a backlog at full speed) | Credits confirmed USDC deposits; one cursor per network |
-| Background loop | 5 s | Poll KYC for users in review -> `fundPending` -> `reconcileSpends` -> deliver due webhooks (not awaited) -> swap reconcile -> checkout `sync` -> `PayoutSender.tick` |
+| Background loop | 5 s | Poll KYC for users in review -> `fundPending` -> `reconcileSpends` -> deliver due webhooks (not awaited) -> swap reconcile -> checkout `sync` -> `PayoutInteractor.tick` |
 
 Each step catches and logs its own error, so one failure does not stop the others. First boot sets each chain cursor to `head - 20` (a sandbox shortcut; a production start block must be chosen deliberately).
 
@@ -426,11 +444,11 @@ The pattern is the same everywhere: **write intent first, make the external call
 | Ledger | `ledger`, `ledger.adversarial`, `stablecoin-units.spec` |
 | Cards and agents | `cards.adversarial`, `tiers`, `policy`, `lifecycle`, `agent-wallets`, `card-vault`, `onboarding` |
 | Chain | `base-usdc-watcher`, `chain-pg`, `hd-wallet`, `usdc-payout`, `sim-deposit` |
-| Service and HTTP | `app`, `service`, `client`, `miden-wallet`, `signature`, `webhook-signature` |
+| Service and HTTP | `app`, `http-router`, `service`, `client`, `miden-wallet`, `signature`, `webhook-signature` |
 | Checkout | `checkout`, `checkout-swap`, `shopify-filler`, `lemonsqueezy-filler`, `paddle-filler` |
 | Developers | `developers`, `privacy`, plus `examples/developer/webhook-verify.test.ts` |
 
-The Postgres-backed suites (`chain-pg`, and the service tests that need a database) run only when `DATABASE_URL` is set; the ledger also has an in-memory `MemoryStore` with the same rules. Beyond unit tests, `scripts/sandbox-demo.ts` drives the whole owner-and-agent flow against the real Miden sandbox (it **moves sandbox money**), and `scripts/swap-rehearsal.ts` / `swap-sandbox-e2e.ts` prove the two halves of hosted checkout without real money.
+The Postgres-backed suites (`chain-pg`, and the service tests that need a database) run only when `DATABASE_URL` is set; the ledger also has an in-memory `MemoryLedgerStore` with the same rules. Beyond unit tests, `scripts/sandbox-demo.ts` drives the whole owner-and-agent flow against the real Miden sandbox (it **moves sandbox money**), and `scripts/swap-rehearsal.ts` / `swap-sandbox-e2e.ts` prove the two halves of hosted checkout without real money.
 
 ## 14. Known limits
 

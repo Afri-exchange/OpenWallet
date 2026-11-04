@@ -1,7 +1,7 @@
 // Sandbox only: issues N cards under the customer saved in .sandbox-state.json (key from argv[2], default "platform").
 import { readFileSync, writeFileSync } from "node:fs";
-import { MidenClient, MidenApiError } from "../src/miden/client.js";
-import { CardService } from "../src/cards/service.js";
+import { MidenClient, MidenApiError } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
+import { CardService } from "../src/adapters/virtualCards/CardService.js";
 
 const baseUrl = "https://sandbox-api.midencards.io/miden";
 const tokenUrl = "https://sandbox-identityserver.midencards.io/connect/token";

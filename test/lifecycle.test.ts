@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CardLifecycle, poll } from "../src/cards/lifecycle.js";
-import type { MidenClient } from "../src/miden/client.js";
+import { CardLifecycle, poll } from "../src/adapters/virtualCards/CardLifecycle.js";
+import type { MidenClient } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
 
 function fake(reply: unknown) {
   const calls: { method: string; path: string; body?: unknown }[] = [];

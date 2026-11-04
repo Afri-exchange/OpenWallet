@@ -15,7 +15,7 @@ mkdir -p .run
 if [ -f .run/server.pid ] && kill -0 "$(cat .run/server.pid)" 2>/dev/null; then
   echo "already running (pid $(cat .run/server.pid)) at http://127.0.0.1:8787"; exit 0
 fi
-ALLOW_SIMULATED_DEPOSITS="${ALLOW_SIMULATED_DEPOSITS:-1}" nohup node --import tsx src/app/main.ts >> .run/server.log 2>&1 &
+ALLOW_SIMULATED_DEPOSITS="${ALLOW_SIMULATED_DEPOSITS:-1}" nohup node --import tsx src/main.ts >> .run/server.log 2>&1 &
 echo $! > .run/server.pid
 sleep 4
 curl -fsS http://127.0.0.1:8787/healthz >/dev/null && echo "running (pid $(cat .run/server.pid)) at http://127.0.0.1:8787; log: .run/server.log"

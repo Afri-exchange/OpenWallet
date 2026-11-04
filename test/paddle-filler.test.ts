@@ -1,9 +1,9 @@
 import { test, after, before } from "node:test";
 import assert from "node:assert/strict";
-import type { CardDetails, CheckoutFiller, FillRequest, FillResult } from "../src/checkout-swap/filler.js";
-import { PaddleFiller } from "../src/checkout-swap/paddle-filler.js";
-import { startPaddleFixture, type PaddleFixture } from "../src/checkout-swap/paddle-fixture.js";
-import { checkoutKind, RoutingFiller } from "../src/checkout-swap/router-filler.js";
+import type { CardDetails, CheckoutFiller, FillRequest, FillResult } from "../src/adapters/checkoutFillers/CheckoutFiller.js";
+import { PaddleFiller } from "../src/adapters/checkoutFillers/PaddleFiller.js";
+import { startPaddleFixture, type PaddleFixture } from "../src/adapters/checkoutFillers/fixtures/paddleFixture.js";
+import { checkoutKind, RoutingFiller } from "../src/adapters/checkoutFillers/RoutingFiller.js";
 
 const TEST_CARD: CardDetails = { pan: "4242424242424242", cvv: "123", expMonth: 12, expYear: 2030, nameOnCard: "Ada Test", billingZip: "94107" };
 const WITH_ADDRESS: CardDetails = { ...TEST_CARD, billingAddress: { line1: "510 Townsend St", city: "San Francisco", state: "CA", country: "US" } };

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MidenClient } from "../src/miden/client.js";
-import { MidenWalletFunding, MidenDuplicateReferenceError, referenceFor } from "../src/funding/miden-wallet.js";
+import { MidenClient } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
+import { MidenWalletFunding, MidenDuplicateReferenceError, referenceFor } from "../src/adapters/funding/MidenWalletFunding.js";
 
 interface Call { url: string; init: RequestInit & { headers: Record<string, string> } }
 

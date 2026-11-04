@@ -3,9 +3,9 @@
 An agent pays a third-party hosted checkout page (Stripe Checkout `checkout.stripe.com/c/pay/...`, or a Payment Link `buy.stripe.com/...`). The agent sends the URL and the exact price it agreed to. Our server opens the page and puts in the owner's real card, which it reads from the vault. The agent never sees the card.
 
 ```
-agent ── pay_hosted_checkout(url, amount, merchant, key) ──► SwapService
+agent ── pay_hosted_checkout(url, amount, merchant, key) ──► SwapInteractor
   1. validate: swap on, host allowlisted (https), amount ≤ cap ($10), key present, card in vault
-  2. AppService.pay under spend key checkout:swap:<swapId>: agent limits, balance, ledger debit
+  2. CardholderInteractor.pay under spend key checkout:swap:<swapId>: agent limits, balance, ledger debit
   3. charge (one at a time per process):
        vault.reveal(card, "checkout:<swapId>")   ← audited, after the debit, just before the page
        PlaywrightFiller: load → bot check? → read the total, must equal amount → type card → pay → watch
@@ -17,7 +17,7 @@ agent ── pay_hosted_checkout(url, amount, merchant, key) ──► SwapServi
      and for pages that said "paid": confirm on the card and record the real MCC; mismatch or nothing → review
 ```
 
-Code: `src/checkout-swap/` (`swap.ts` service, `playwright-filler.ts`, `filler.ts` types and scrub, `fixture.ts` local Stripe-like page), migration `009_checkout_swap.sql`. The vault and card capture are Kai's: `src/vault/vault.ts`, `src/cards/service.ts`.
+Code: `src/lib/interactors/SwapInteractor.ts` (the use case) and `src/adapters/checkoutFillers/` (`PlaywrightFiller.ts`, `CheckoutFiller.ts` types and scrub, `fixtures/stripeFixture.ts` local Stripe-like page), migration `009_checkout_swap.sql`. The vault and card capture are Kai's: `src/adapters/cardVault/CardVault.ts`, `src/adapters/virtualCards/CardService.ts`.
 
 ## Statuses
 

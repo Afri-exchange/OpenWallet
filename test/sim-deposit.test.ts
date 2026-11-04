@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseSimDeposit } from "../src/chain/sim-deposit.js";
+import { parseSimDeposit } from "../src/adapters/deposits/simDeposit.js";
 
 const A = "0x" + "ab".repeat(20);
 

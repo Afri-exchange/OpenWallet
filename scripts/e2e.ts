@@ -3,10 +3,10 @@
 // MOVES SANDBOX MONEY (a small top-up). Never prints the token, kycToken or card details.
 // Run: node --import tsx scripts/e2e.ts <kycClientReference> [topUpDollars=5] [spendDollars=2]
 // <kycClientReference> is the clientReference of an existing Card KYC submission for the cardholder.
-import { CardLifecycle, poll } from "../src/cards/lifecycle.js";
-import { CardService } from "../src/cards/service.js";
-import { MidenWalletFunding } from "../src/funding/miden-wallet.js";
-import { MidenApiError, MidenClient, configFromEnv } from "../src/miden/client.js";
+import { CardLifecycle, poll } from "../src/adapters/virtualCards/CardLifecycle.js";
+import { CardService } from "../src/adapters/virtualCards/CardService.js";
+import { MidenWalletFunding } from "../src/adapters/funding/MidenWalletFunding.js";
+import { MidenApiError, MidenClient, configFromEnv } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
 
 const [kycRef, topUpArg = "5", spendArg = "2"] = process.argv.slice(2);
 if (!kycRef) throw new Error("usage: e2e.ts <kycClientReference> [topUpDollars] [spendDollars]");

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Ledger, accounts } from "../src/ledger/ledger.js";
-import { BASE_USDC, BaseUsdcWatcher, MemoryCursor, TRANSFER_TOPIC, jsonRpc, type Dust, type RpcLog } from "../src/chain/base-usdc-watcher.js";
+import { Ledger, accounts } from "../src/lib/services/Ledger.js";
+import { BASE_USDC, BaseUsdcWatcher, MemoryCursor, TRANSFER_TOPIC, jsonRpc, type Dust, type RpcLog } from "../src/adapters/deposits/BaseUsdcWatcher.js";
 
 const ADDR_A = "0x00000000000000000000000000000000000000aA";
 const ADDR_B = "0x00000000000000000000000000000000000000bb";

@@ -2,18 +2,19 @@ import { test, after, before } from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import pg from "pg";
-import { AgentWallets } from "../src/agents/wallets.js";
-import { PgDepositAddresses } from "../src/chain/pg.js";
-import { DEFAULT_TIERS } from "../src/cards/tiers.js";
-import { Ledger, accounts } from "../src/ledger/ledger.js";
-import { PgStore } from "../src/ledger/pg-store.js";
-import { MidenApiError } from "../src/miden/client.js";
-import { AppError, AppService, type AppDeps } from "../src/app/service.js";
-import { MemoryCardVault, type CardDetails } from "../src/vault/vault.js";
-import { parseUsdCents, scrub, type CheckoutFiller, type FillRequest, type FillResult } from "../src/checkout-swap/filler.js";
-import { cardFree, PlaywrightFiller } from "../src/checkout-swap/playwright-filler.js";
-import { startCheckoutFixture, type CheckoutFixture } from "../src/checkout-swap/fixture.js";
-import { isStripeTestUrl, parseCardTime, SwapService, swapConfigFromEnv, type SwapConfig } from "../src/checkout-swap/swap.js";
+import { AgentWallets } from "../src/lib/services/AgentWallets.js";
+import { PgDepositAddresses } from "../src/db/repositories/PgChainRepositories.js";
+import { DEFAULT_TIERS } from "../src/lib/services/tiers.js";
+import { Ledger, accounts } from "../src/lib/services/Ledger.js";
+import { PgLedgerStore } from "../src/db/repositories/PgLedgerStore.js";
+import { MidenApiError } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
+import { CardholderInteractor, type CardholderContext } from "../src/lib/interactors/CardholderInteractor.js";
+import { MemoryCardVault, type CardDetails } from "../src/adapters/cardVault/CardVault.js";
+import { parseUsdCents, scrub, type CheckoutFiller, type FillRequest, type FillResult } from "../src/adapters/checkoutFillers/CheckoutFiller.js";
+import { cardFree, PlaywrightFiller } from "../src/adapters/checkoutFillers/PlaywrightFiller.js";
+import { startCheckoutFixture, type CheckoutFixture } from "../src/adapters/checkoutFillers/fixtures/stripeFixture.js";
+import { isStripeTestUrl, parseCardTime, SwapInteractor, swapConfigFromEnv, type SwapConfig } from "../src/lib/interactors/SwapInteractor.js";
+import { AgentCardsError } from "../src/errors.js";
 
 const TEST_CARD: CardDetails = { pan: "4242424242424242", cvv: "123", expMonth: 12, expYear: 2030, nameOnCard: "Ada Test", billingZip: "94000" };
 const card = (): CardDetails => ({ ...TEST_CARD });
@@ -126,7 +127,7 @@ test("filler: a session that needs a full billing address is filled from the vau
   assert.deepEqual([withAddr.outcome, withAddr.submitted], ["succeeded", true]);
 });
 
-// ---------- SwapService against Postgres, with a fake filler ----------
+// ---------- SwapInteractor against Postgres, with a fake filler ----------
 
 const databaseUrl = process.env.DATABASE_URL;
 const skip = !databaseUrl;
@@ -162,8 +163,8 @@ async function setup(cfg: Partial<SwapConfig> = {}, opts: { privacy?: boolean } 
   schemas.push(schema);
   const pool = new pg.Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 6 });
   pools.push(pool);
-  await new PgStore(pool).migrate();
-  const ledger = new Ledger(undefined, new PgStore(pool));
+  await new PgLedgerStore(pool).migrate();
+  const ledger = new Ledger(undefined, new PgLedgerStore(pool));
   const txns: Record<string, unknown>[] = [];
   const asked: string[] = [];
   const lifecycle = {
@@ -175,7 +176,7 @@ async function setup(cfg: Partial<SwapConfig> = {}, opts: { privacy?: boolean } 
   let clock = Date.now();
   const vaultRef: { v?: MemoryCardVault } = {};
   const oneTimeCards: string[] = [];
-  const app = new AppService({
+  const app = new CardholderInteractor({
     pool, ledger, wallets: new AgentWallets(ledger), addresses: new PgDepositAddresses(pool, "base-sepolia"),
     deriveAddress: (i: number) => `0x${i.toString(16).padStart(40, "0")}`, tiers: DEFAULT_TIERS, chain: "base-sepolia", sandbox: true, simulatedDeposits: true,
     miden: { request: async () => ({ isSuccessful: true, responseCode: "00", kycStatus: "Initiated" }) },
@@ -192,7 +193,7 @@ async function setup(cfg: Partial<SwapConfig> = {}, opts: { privacy?: boolean } 
     },
     funding: { fund: async () => ({ id: "m1", status: "confirmed" as const }) },
     now: () => new Date(clock),
-  } as unknown as AppDeps);
+  } as unknown as CardholderContext);
   const { userId } = await app.signup(`u${randomBytes(3).toString("hex")}@example.com`);
   if (opts.privacy) await pool.query("UPDATE app_user SET privacy_mode = true WHERE id = $1", [userId]);
   await app.submitKyc(userId, KYC);
@@ -206,7 +207,7 @@ async function setup(cfg: Partial<SwapConfig> = {}, opts: { privacy?: boolean } 
   await vault.put(p.cardId, card());
   const filler = new FakeFiller();
   if (opts.privacy) filler.expectPan = ONE_TIME_PAN;
-  const swap = new SwapService({
+  const swap = new SwapInteractor({
     pool, app, vault, filler, lifecycle, now: () => new Date(clock),
     config: { enabled: true, maxAmountCents: 1_000, allowedHosts: ["checkout.stripe.com"], ...cfg },
   });
@@ -285,9 +286,9 @@ test("swap: refuses before reserving anything: off, over the cap, wrong host, no
   await assert.rejects(s.swap.pay(s.p, req({ checkoutUrl: "https://evil.example/c/pay/x" })), st(400));
   await assert.rejects(s.swap.pay(s.p, req({ checkoutUrl: "http://checkout.stripe.com/c/pay/x" })), st(400));
   await assert.rejects(s.swap.pay(s.p, req({ idempotencyKey: "" })), st(400));
-  const off = new SwapService({ ...(s.swap as any).d, config: { enabled: false, maxAmountCents: 1000, allowedHosts: ["checkout.stripe.com"] } });
+  const off = new SwapInteractor({ ...(s.swap as any).d, config: { enabled: false, maxAmountCents: 1000, allowedHosts: ["checkout.stripe.com"] } });
   await assert.rejects(off.pay(s.p, req()), st(403));
-  const empty = new SwapService({ ...(s.swap as any).d, vault: new MemoryCardVault() });
+  const empty = new SwapInteractor({ ...(s.swap as any).d, vault: new MemoryCardVault() });
   await assert.rejects(empty.pay(s.p, req()), /not on file/);
   assert.equal(s.filler.calls.length, 0);
   assert.equal(await s.balance(), 2_000);
@@ -335,7 +336,7 @@ test("swap: a decline on the page voids; a 3-D Secure challenge holds the money 
   assert.equal(await s.balance(), 1_000, "held");
 
   await s.app.reconcileSpends();
-  assert.equal((await s.swap.get(s.p, t.swapId)).payment!.status, "processing", "AppService's own reconcile leaves swap spends alone");
+  assert.equal((await s.swap.get(s.p, t.swapId)).payment!.status, "processing", "CardholderInteractor's own reconcile leaves swap spends alone");
 
   // The card shows the authorization approved (the owner passed 3DS in time).
   await s.age(90_000);
@@ -404,7 +405,7 @@ test("swap: a second payment of the same amount on the card waits while the firs
   const a = await s.swap.pay(s.p, req({ idempotencyKey: "a", amountCents: 400 }));
   assert.equal(a.status, "challenge");
   s.filler.next = { outcome: "succeeded", submitted: true };
-  await assert.rejects(s.swap.pay(s.p, req({ idempotencyKey: "b", amountCents: 400 })), (e: AppError) => e.status === 409 && /still being confirmed/.test(e.message));
+  await assert.rejects(s.swap.pay(s.p, req({ idempotencyKey: "b", amountCents: 400 })), (e: AgentCardsError) => e.status === 409 && /still being confirmed/.test(e.message));
   assert.equal((await s.pool.query("SELECT count(*)::int AS n FROM app_checkout_swap")).rows[0].n, 1, "nothing written for the refused one");
   assert.equal((await s.swap.pay(s.p, req({ idempotencyKey: "a", amountCents: 400 }))).swapId, a.swapId, "a retry under the same key is never refused");
   assert.equal((await s.swap.pay(s.p, req({ idempotencyKey: "c", amountCents: 500 }))).status, "paid", "a different amount is not held up");

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { verifyWebhook, webhookSignature } from "../src/webhooks/signature.js";
+import { verifyWebhook, webhookSignature } from "../src/lib/clients/cardIssuing/miden/webhookSignature.js";
 
 // Independent: printf '%s' '26184906&2025-07-24 13:32:55' | openssl dgst -sha256 -hmac mySecret
 // (The docs' own sample output, 97b24d88…, does not match their algorithm; see docs/miden-api.md.)
