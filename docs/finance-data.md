@@ -1,6 +1,6 @@
 # Finance data storage
 
-Everything that is money or evidence of money lives in Postgres. Code: `src/lib/services/Ledger.ts`, `src/db/repositories/PgLedgerStore.ts`, `src/db/repositories/PgChainRepositories.ts`, `src/lib/interactors/CardholderInteractor.ts`. Migrations: `src/db/migrations/001_ledger.sql`, `002_chain.sql`, `003_app.sql`, applied in order at boot by `PgLedgerStore.migrate()` (recorded in `ledger_migrations`; guarded by a Postgres advisory lock, so only one process migrates at a time). Tests use an in-memory store (`MemoryLedgerStore`) with the same rules.
+Everything that is money or evidence of money lives in Postgres. Code: `src/lib/services/Ledger.ts`, `src/db/repositories/createLedgerStore.ts`, `src/db/repositories/createChainRepositories.ts`, `src/lib/interactors/CardholderInteractor.ts`. Migrations: `src/db/migrations/001_ledger.sql`, `002_chain.sql`, `003_app.sql`, applied in order at boot by `migrate(pool)` (`src/db/migrate.ts`) (recorded in `ledger_migrations`; guarded by a Postgres advisory lock, so only one process migrates at a time). Tests use an in-memory store (`MemoryLedgerStore`) with the same rules.
 
 ## Principles
 
@@ -26,7 +26,7 @@ Everything that is money or evidence of money lives in Postgres. Code: `src/lib/
 - **Immutability:** triggers on `ledger_tx` and `ledger_posting` raise `ledger is append-only` on UPDATE, DELETE and TRUNCATE.
 - **No overdraft:** `CHECK (balance_cents >= 0 OR account ~ '^(external|fees):')`. Only `external:*` (money outside the system) and `fees:*` may be negative.
 - **Serialised writers:** each transaction locks the balance rows of every account it touches (`SELECT … FOR UPDATE`, ordered by account to avoid deadlocks) before checking balances, so two concurrent spends on one account queue and the second sees the first's committed balance.
-- **Integrity probe:** `ledger_check_balances()` returns any account whose stored balance differs from the sum of its postings, plus a row with an empty account name if the grand total is non-zero. `PgLedgerStore.checkIntegrity()` wraps it. An empty result means healthy. Run it on a schedule (**OPEN:** nothing schedules it yet).
+- **Integrity probe:** `ledger_check_balances()` returns any account whose stored balance differs from the sum of its postings, plus a row with an empty account name if the grand total is non-zero. The ledger store's `checkIntegrity()` wraps it. An empty result means healthy. Run it on a schedule (**OPEN:** nothing schedules it yet).
 
 ### Accounts
 

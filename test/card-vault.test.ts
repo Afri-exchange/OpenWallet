@@ -5,8 +5,10 @@ import pg from "pg";
 import { CardService } from "../src/adapters/virtualCards/CardService.js";
 import { MidenClient } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
 import { decryptSecureCardDetails, parseExpiry } from "../src/lib/clients/cardIssuing/miden/cardDetails.js";
-import { PgLedgerStore } from "../src/db/repositories/PgLedgerStore.js";
-import { MemoryCardVault, PgCardVault, vaultKeyFromEnv, type CardDetails } from "../src/adapters/cardVault/CardVault.js";
+import { createDatabase } from "../src/db/client.js";
+import { migrate } from "../src/db/migrate.js";
+import { createCardVaultRepository } from "../src/db/repositories/createCardVaultRepository.js";
+import { MemoryCardVault, SealedCardVault, vaultKeyFromEnv, type CardDetails } from "../src/adapters/cardVault/CardVault.js";
 
 // The sample on docs.miden.co/decrypt-encrypted-card-details-copy.md (public, not a real card).
 const DOC_CLIENT_ID = "GEORGEDAUGHTERS4BF84D67844F4A3E94E884719E6DBDDF";
@@ -202,9 +204,10 @@ test("pg vault: sealed at rest, audited, rows bound to their card", { skip: !dat
   schemas.push(schema);
   const pool = new pg.Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 4 });
   pools.push(pool);
-  await new PgLedgerStore(pool).migrate();
+  await migrate(pool);
+  const repo = createCardVaultRepository(createDatabase(pool));
   const key = randomBytes(32);
-  const v = new PgCardVault(pool, key);
+  const v = new SealedCardVault(repo, key);
   await v.put("c1", D);
   await v.put("c2", { ...D, pan: "4000000000000002" });
   assert.equal(await v.has("c1"), true);
@@ -216,7 +219,7 @@ test("pg vault: sealed at rest, audited, rows bound to their card", { skip: !dat
   // Moving c2's sealed row onto c1 must not decrypt (AAD binds the card id).
   await pool.query("UPDATE card_vault SET iv = s.iv, ciphertext = s.ciphertext, tag = s.tag FROM card_vault s WHERE card_vault.card_id = 'c1' AND s.card_id = 'c2'");
   await assert.rejects(v.reveal("c1", "checkout:abc"));
-  await assert.rejects(new PgCardVault(pool, randomBytes(32)).reveal("c2", "x"));
+  await assert.rejects(new SealedCardVault(repo, randomBytes(32)).reveal("c2", "x"));
   const audit = (await pool.query("SELECT card_id, action, purpose FROM card_vault_audit ORDER BY id")).rows;
   assert.deepEqual(audit.map((a) => `${a.card_id}:${a.action}:${a.purpose}`), [
     "c1:put:capture:issue", "c2:put:capture:issue", "c1:reveal:checkout:abc", "nope:reveal_miss:checkout:abc", "c1:reveal:checkout:abc", "c2:reveal:x",

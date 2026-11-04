@@ -1,9 +1,9 @@
 /**
  * Double-entry, append-only ledger. Amounts are integer USD cents.
  * Every transaction's postings sum to zero; balances are derived, never edited.
- * Storage is behind LedgerStore (MemoryLedgerStore for tests, PgLedgerStore in production); all validation lives here.
+ * Storage is behind LedgerStore (MemoryLedgerStore for tests, createLedgerStore in production); all validation lives here.
  */
-import { DuplicateKeyError, type LedgerStore, type StoreTx } from "../../domain/repositories/LedgerStore.js";
+import { DuplicateKeyError, OverdraftError, type LedgerStore, type StoreTx } from "../../domain/repositories/LedgerStore.js";
 import { MemoryLedgerStore } from "../../db/repositories/MemoryLedgerStore.js";
 
 export interface Posting {
@@ -412,7 +412,7 @@ export class Ledger {
       }));
     } catch (e) {
       if (e instanceof DuplicateKeyError) throw new LedgerError(`idempotency key reused with different content: ${tx.idempotencyKey}`);
-      if (e instanceof Error && e.constructor.name === "OverdraftError") throw new LedgerError("insufficient funds");
+      if (e instanceof OverdraftError) throw new LedgerError("insufficient funds");
       throw e;
     }
   }

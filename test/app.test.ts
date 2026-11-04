@@ -5,12 +5,14 @@ import type { AddressInfo } from "node:net";
 import { request } from "node:http";
 import pg from "pg";
 import { AgentWallets } from "../src/lib/services/AgentWallets.js";
-import { PgDepositAddresses } from "../src/db/repositories/PgChainRepositories.js";
+import { createDepositAddressRepository } from "../src/db/repositories/createChainRepositories.js";
 import { DEFAULT_TIERS } from "../src/lib/services/tiers.js";
 import { MidenDuplicateReferenceError } from "../src/adapters/funding/MidenWalletFunding.js";
 import type { FundingRequest } from "../src/domain/interfaces/FundingSource.js";
 import { Ledger, accounts } from "../src/lib/services/Ledger.js";
-import { PgLedgerStore } from "../src/db/repositories/PgLedgerStore.js";
+import { createDatabase } from "../src/db/client.js";
+import { migrate } from "../src/db/migrate.js";
+import { createRepositories } from "../src/db/repositories/createRepositories.js";
 import { MidenApiError } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
 import { createAppServer } from "../src/createHttpServer.js";
 import { CardholderInteractor, midFor, type CardholderContext } from "../src/lib/interactors/CardholderInteractor.js";
@@ -62,7 +64,7 @@ function fakeMiden() {
       },
       transactions: async (cardId: string, type?: string) => f.txns.filter((t) => t.cardId === cardId && (!type || t.transactionType === type)),
     },
-    cards: { issue: async (_a: string, policy: unknown) => ({ id: `card-${++f.cardsIssued}`, agentId: "x", policy }) },
+    cardIssuer: { issue: async (_a: string, policy: unknown) => ({ id: `card-${++f.cardsIssued}`, agentId: "x", policy }) },
     funding: {
       fund: async (req: FundingRequest) => {
         f.fundCalls.push(req);
@@ -87,13 +89,16 @@ async function setup() {
   schemas.push(schema);
   const pool = new pg.Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 6 });
   pools.push(pool);
-  const store = new PgLedgerStore(pool);
-  await store.migrate();
+  await migrate(pool);
+  const db = createDatabase(pool);
+  const repos = createRepositories(db);
+  const store = repos.ledger;
   const ledger = new Ledger(undefined, store);
   const { f, deps } = fakeMiden();
   const make = (over: Partial<CardholderContext> = {}) => {
     const d = {
-      pool, ledger, wallets: new AgentWallets(ledger), addresses: new PgDepositAddresses(pool, "base-sepolia"),
+      users: repos.users, cards: repos.cards, agents: repos.agents, spends: repos.spends, fundings: repos.fundings, oneTimeCards: repos.oneTimeCards,
+      ledger, wallets: new AgentWallets(ledger), addresses: createDepositAddressRepository(db, "base-sepolia"),
       deriveAddress: (i: number) => `0x${i.toString(16).padStart(40, "0")}`, tiers: DEFAULT_TIERS, chain: "base-sepolia", sandbox: true, simulatedDeposits: true,
       ...deps,
       ...over,

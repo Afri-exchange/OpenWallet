@@ -3,7 +3,9 @@ import { randomBytes } from "node:crypto";
 import pg from "pg";
 import assert from "node:assert/strict";
 import { Ledger, LedgerError, accounts, type Posting } from "../src/lib/services/Ledger.js";
-import { PgLedgerStore } from "../src/db/repositories/PgLedgerStore.js";
+import { createDatabase } from "../src/db/client.js";
+import { migrate } from "../src/db/migrate.js";
+import { createLedgerStore } from "../src/db/repositories/createLedgerStore.js";
 
 // Set DATABASE_URL to also run every ledger test against a fresh Postgres schema.
 const databaseUrl = process.env.DATABASE_URL;
@@ -19,9 +21,8 @@ async function fresh(now?: () => Date): Promise<Ledger> {
   await Promise.all(pools.splice(0).map((p) => p.end()));
   const pool = new pg.Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 10 });
   pools.push(pool);
-  const store = new PgLedgerStore(pool);
-  await store.migrate();
-  return new Ledger(now, store);
+  await migrate(pool);
+  return new Ledger(now, createLedgerStore(createDatabase(pool)));
 }
 after(async () => {
   for (const p of pools) await p.end();

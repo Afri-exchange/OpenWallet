@@ -12,19 +12,23 @@
     "dev:up": "scripts/sandbox-up.sh",
     "dev:keys": "tsx scripts/dev-quickstart.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test test/*.test.ts",
+    "test": "tsx --test --test-concurrency=4 test/*.test.ts",
     "swap:rehearse": "tsx scripts/swap-rehearsal.ts",
     "swap:sandbox-e2e": "tsx scripts/swap-sandbox-e2e.ts",
-    "swap:live-test": "tsx scripts/swap-live-test.ts"
+    "swap:live-test": "tsx scripts/swap-live-test.ts",
+    "db:studio": "drizzle-kit studio",
+    "db:check": "tsx --test test/db-schema.test.ts"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@types/pg": "^8.23.1",
+    "drizzle-kit": "0.31.11",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
+    "drizzle-orm": "0.45.4",
     "pg": "^8.23.1",
     "viem": "^2.57.7",
     "zod": "^4.6.7"

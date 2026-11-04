@@ -33,7 +33,7 @@ node --import tsx src/main.ts
 | `MIDEN_CLIENT_ID`, `MIDEN_CLIENT_SECRET`, `MIDEN_UNIQUE_KEY` | required | Miden credentials. Never print or commit them. |
 | `MIDEN_BASE_URL` | Miden sandbox | Must contain `sandbox` or the service throws at boot. |
 | `MIDEN_TOKEN_URL` | Miden sandbox identity server | |
-| `DATABASE_URL` | `postgres://localhost/agent_cards` | Migrations run at boot (`PgLedgerStore.migrate()`). |
+| `DATABASE_URL` | `postgres://localhost/agent_cards` | Migrations run at boot (`migrate(pool)`, `src/db/migrate.ts`). |
 | `PORT` / `HOST` | `8787` / `127.0.0.1` | Localhost only by design. |
 | `ALLOWED_HOSTS` | none | Extra `Host` header values accepted (see DNS-rebinding guard below). |
 | `BASE_RPC_URL` | `https://base-sepolia-rpc.publicnode.com` | See [deposit-watcher.md](deposit-watcher.md). |

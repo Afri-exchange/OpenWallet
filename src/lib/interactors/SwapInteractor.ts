@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
-import type pg from "pg";
+import type { SwapRepository } from "../../domain/repositories/SwapRepository.js";
+import type { CheckoutSwap } from "../../domain/types/Entities.js";
 import type { CardTransaction } from "../../adapters/virtualCards/CardLifecycle.js";
 import type { CardVault } from "../../adapters/cardVault/CardVault.js";
 import { SWAP_KEY_PREFIX, type AgentPrincipal, type ChargeOutcome, type Charger, type PayRequest, type SpendView } from "./CardholderInteractor.js";
@@ -42,7 +43,7 @@ export interface SwapConfig {
 }
 
 export interface SwapContext {
-  pool: pg.Pool;
+  swaps: SwapRepository;
   app: {
     pay(p: AgentPrincipal, req: PayRequest, opts: { internal: true; charge: Charger }): Promise<SpendView>;
     resolveSwapSpend(spendId: string, out: { status: "approved"; auth?: string } | { status: "voided"; reason: string }): Promise<boolean>;
@@ -165,17 +166,14 @@ export class SwapInteractor {
       throw conflictError("this card's details are not on file, so it cannot pay hosted checkouts; the owner needs to have them captured again");
     }
     await this.insertOrBusy(p, r);
-    const row = (await this.d.pool.query(
-      "SELECT * FROM app_checkout_swap WHERE card_id = $1 AND agent_id = $2 AND idempotency_key = $3",
-      [p.cardId, p.agentId, r.idempotencyKey],
-    )).rows[0];
-    if (row.checkout_url !== r.url.href || Number(row.amount_cents) !== r.amountCents || row.merchant !== r.merchant || (row.mcc ?? undefined) !== r.mcc) {
+    const row = (await this.d.swaps.findByKey(p.cardId, p.agentId, r.idempotencyKey))!;
+    if (row.checkoutUrl !== r.url.href || row.amountCents !== r.amountCents || row.merchant !== r.merchant || (row.mcc ?? undefined) !== r.mcc) {
       throw conflictError("that idempotency key was already used for a different checkout payment");
     }
     // Calling pay again under the same spend key never charges twice (CardholderInteractor returns the first result),
     // so a pending row (crash, or a concurrent call) can always be driven forward safely.
     if (row.status !== "pending") return this.view(row);
-    const swapId = row.swap_id as string;
+    const swapId = row.swapId;
     const inflight = this.running.get(swapId);
     if (inflight) return inflight;
     const run = this.drive(p, row).finally(() => this.running.delete(swapId));
@@ -184,16 +182,13 @@ export class SwapInteractor {
   }
 
   async get(p: AgentPrincipal, swapId: string): Promise<SwapView> {
-    const row = (await this.d.pool.query("SELECT * FROM app_checkout_swap WHERE swap_id = $1 AND card_id = $2 AND agent_id = $3", [swapId, p.cardId, p.agentId])).rows[0];
+    const row = await this.d.swaps.findForAgent(swapId, p.cardId, p.agentId);
     if (!row) throw notFoundError("checkout payment not found");
     return this.view(row);
   }
 
   async list(p: AgentPrincipal, limit = 20): Promise<SwapView[]> {
-    const rows = (await this.d.pool.query(
-      "SELECT * FROM app_checkout_swap WHERE card_id = $1 AND agent_id = $2 ORDER BY created_at DESC LIMIT $3",
-      [p.cardId, p.agentId, Math.min(Math.max(limit, 1), 100)],
-    )).rows;
+    const rows = await this.d.swaps.listForAgent(p.cardId, p.agentId, Math.min(Math.max(limit, 1), 100));
     return Promise.all(rows.map((r) => this.view(r)));
   }
 
@@ -223,11 +218,11 @@ export class SwapInteractor {
     return { url, amountCents, merchant: req.merchant.trim(), mcc, idempotencyKey: req.idempotencyKey.trim() };
   }
 
-  private async drive(p: AgentPrincipal, row: Record<string, any>): Promise<SwapView> {
-    const swapId = row.swap_id as string;
-    const amountCents = Number(row.amount_cents);
+  private async drive(p: AgentPrincipal, row: CheckoutSwap): Promise<SwapView> {
+    const swapId = row.swapId;
+    const amountCents = row.amountCents;
     let fill: FillResult | undefined;
-    const testCard = Boolean(this.d.config.stripeTestCard) && isStripeTestUrl(row.checkout_url);
+    const testCard = Boolean(this.d.config.stripeTestCard) && isStripeTestUrl(row.checkoutUrl);
     const outcomeOf = (f: FillResult): ChargeOutcome => {
       if (f.outcome === "succeeded") return { kind: "approved" };
       if (f.outcome === "declined") return { kind: "refused", reason: "card declined at the checkout" };
@@ -235,20 +230,20 @@ export class SwapInteractor {
       return { kind: "unknown", reason: "the checkout gave no clear answer after the card was submitted; the money is held while we check the card" };
     };
     const charge: Charger = (spendId) => this.serialized(async (): Promise<ChargeOutcome> => {
-      await this.d.pool.query("UPDATE app_checkout_swap SET status = 'filling', spend_id = $2, updated_at = now() WHERE swap_id = $1", [swapId, spendId]);
+      await this.d.swaps.markFilling(swapId, spendId);
       let card: CardDetails | null = null;
       let chargeCardId = p.cardId;
       try {
         if (testCard) {
           this.log(`swap ${swapId}: Stripe test-mode link, paying with Stripe's test card (the vault is not opened)`);
-          await this.d.pool.query("UPDATE app_checkout_swap SET charge_card_id = $2, updated_at = now() WHERE swap_id = $1", [swapId, TEST_CARD_ID]);
+          await this.d.swaps.setChargeCard(swapId, TEST_CARD_ID);
           card = stripeTestCard();
         } else {
           // As late as possible: after the debit, right before the page. In privacy mode this is where the one-time
           // card is made, so a payment that never gets this far never costs a card.
           chargeCardId = await this.d.app.chargeCardFor(p, spendId, amountCents, { needDetails: true });
           if (chargeCardId !== p.cardId) {
-            await this.d.pool.query("UPDATE app_checkout_swap SET charge_card_id = $2, updated_at = now() WHERE swap_id = $1", [swapId, chargeCardId]);
+            await this.d.swaps.setChargeCard(swapId, chargeCardId);
           }
           card = await this.d.vault.reveal(chargeCardId, `checkout:${swapId}`);
           if (!card) {
@@ -256,7 +251,7 @@ export class SwapInteractor {
             return { kind: "refused", reason: "this card's details are not on file; nothing was charged" };
           }
         }
-        fill = await this.d.filler.fill({ url: row.checkout_url, expectedAmountCents: amountCents, card, email: await this.receiptEmail(p) });
+        fill = await this.d.filler.fill({ url: row.checkoutUrl, expectedAmountCents: amountCents, card, email: await this.receiptEmail(p) });
       } catch (e) {
         // The filler reports its own errors; this is the vault or something unexpected, before any submit.
         fill = { outcome: "error", submitted: false, detail: errText(e).slice(0, 200) };
@@ -268,10 +263,7 @@ export class SwapInteractor {
         // A one-time card is single use: once the page has had it, nothing here needs its details again.
         if (chargeCardId !== p.cardId) await this.d.vault.discard(chargeCardId, `checkout:${swapId}:done`).catch((e) => this.log(`swap ${swapId}: could not discard the one-time card's details: ${errText(e)}`));
       }
-      await this.d.pool.query(
-        "UPDATE app_checkout_swap SET outcome = $2, detail = $3, submitted = $4, updated_at = now() WHERE swap_id = $1",
-        [swapId, fill.outcome, fill.detail ?? null, fill.submitted],
-      );
+      await this.d.swaps.recordFill(swapId, { outcome: fill.outcome, detail: fill.detail ?? null, submitted: fill.submitted });
       this.log(`swap ${swapId}: ${fill.outcome}${fill.submitted ? " (submitted)" : ""}`);
       return outcomeOf(fill);
     });
@@ -281,7 +273,7 @@ export class SwapInteractor {
       spend = await this.d.app.pay(p, { amountCents, merchant: row.merchant, mcc: row.mcc ?? undefined, idempotencyKey: `${SWAP_KEY_PREFIX}${swapId}` }, { internal: true, charge });
     } catch (e) {
       // Nothing was reserved (a 4xx from pay), so this attempt is over.
-      await this.d.pool.query("UPDATE app_checkout_swap SET status = 'failed', detail = $2, updated_at = now() WHERE swap_id = $1 AND status IN ('pending', 'filling')", [swapId, errText(e).slice(0, 200)]);
+      await this.d.swaps.failIfOpen(swapId, errText(e).slice(0, 200));
       throw e;
     }
     const status: SwapStatus =
@@ -290,11 +282,12 @@ export class SwapInteractor {
       : spend.status === "processing" ? "processing"
       : "failed";
     const detail = fill ? undefined : spend.reason ?? undefined;
-    const updated = (await this.d.pool.query(
-      `UPDATE app_checkout_swap SET status = $2, spend_id = $3, detail = COALESCE($4, detail),
-         card_txn_ref = CASE WHEN $5::boolean AND $2 = 'paid' THEN $6 ELSE card_txn_ref END, updated_at = now() WHERE swap_id = $1 RETURNING *`,
-      [swapId, status, spend.spendId, detail ?? null, testCard, `${TEST_CARD_REF}${swapId}`],
-    )).rows[0];
+    const updated = await this.d.swaps.finish(swapId, {
+      status,
+      spendId: spend.spendId,
+      ...(detail !== undefined ? { detail } : {}),
+      ...(testCard ? { cardTxnRefIfPaid: `${TEST_CARD_REF}${swapId}` } : {}),
+    });
     return this.view(updated);
   }
 
@@ -305,8 +298,7 @@ export class SwapInteractor {
   }
 
   private async receiptEmail(p: AgentPrincipal): Promise<string> {
-    const r = await this.d.pool.query("SELECT u.email FROM app_card c JOIN app_user u ON u.id = c.user_id WHERE c.card_id = $1", [p.cardId]);
-    const email = r.rows[0]?.email ?? this.d.config.fallbackEmail;
+    const email = (await this.d.swaps.ownerEmail(p.cardId)) ?? this.d.config.fallbackEmail;
     if (!email) throw new Error("no receipt email for this card");
     return email;
   }
@@ -324,34 +316,26 @@ export class SwapInteractor {
   private async doReconcile(): Promise<void> {
     const before = new Date(this.now().getTime() - RECONCILE_AFTER_MS);
     // A challenge is open only while its money is held; one whose spend was voided (stopped before submit) is final.
-    const rows = (await this.d.pool.query(
-      `SELECT s.* FROM app_checkout_swap s LEFT JOIN app_spend p ON p.spend_id = s.spend_id
-       WHERE (s.status IN ('pending', 'filling', 'processing') OR (s.status = 'challenge' AND p.status = 'processing')) AND s.updated_at < $1
-       ORDER BY s.created_at LIMIT 100`,
-      [before],
-    )).rows;
+    const rows = await this.d.swaps.openForReconcile(before, 100);
     const lists = new Map<string, Promise<CardTransaction[]>>();
     for (const s of rows) {
-      if (this.running.has(s.swap_id)) continue;
-      await this.reconcileOne(s, lists).catch((e) => this.log(`swap reconcile ${s.swap_id}: ${errText(e)}`));
+      if (this.running.has(s.swapId)) continue;
+      await this.reconcileOne(s, lists).catch((e) => this.log(`swap reconcile ${s.swapId}: ${errText(e)}`));
     }
     // Paid on the page: confirm on the card, and learn the real merchant category.
-    const paid = (await this.d.pool.query(
-      "SELECT * FROM app_checkout_swap WHERE status = 'paid' AND card_txn_ref IS NULL AND review IS NULL AND updated_at < $1 ORDER BY created_at LIMIT 100",
-      [before],
-    )).rows;
-    for (const s of paid) await this.confirmPaid(s, lists).catch((e) => this.log(`swap confirm ${s.swap_id}: ${errText(e)}`));
+    const paid = await this.d.swaps.paidUnconfirmed(before, 100);
+    for (const s of paid) await this.confirmPaid(s, lists).catch((e) => this.log(`swap confirm ${s.swapId}: ${errText(e)}`));
   }
 
   /** Unclaimed Authorizations on the swap's card that could be its charge: same amount, not before it started. */
-  private async candidates(s: Record<string, any>, lists: Map<string, Promise<CardTransaction[]>>): Promise<CardTransaction[]> {
+  private async candidates(s: CheckoutSwap, lists: Map<string, Promise<CardTransaction[]>>): Promise<CardTransaction[]> {
     // Paid with Stripe's test card: no card was charged, so no real authorization may ever be claimed for it.
-    if (s.charge_card_id === TEST_CARD_ID) return [];
-    const onCard = (s.charge_card_id ?? s.card_id) as string;
+    if (s.chargeCardId === TEST_CARD_ID) return [];
+    const onCard = s.chargeCardId ?? s.cardId;
     if (!lists.has(onCard)) lists.set(onCard, this.d.lifecycle.transactions(onCard, "Authorization", 100));
-    const claimed = new Set((await this.d.pool.query("SELECT card_txn_ref FROM app_checkout_swap WHERE card_id = $1 AND card_txn_ref IS NOT NULL", [s.card_id])).rows.map((r) => r.card_txn_ref));
-    const from = new Date(s.created_at).getTime() - MATCH_SKEW_MS;
-    const amount = Number(s.amount_cents);
+    const claimed = await this.d.swaps.claimedTxnRefs(s.cardId);
+    const from = s.createdAt.getTime() - MATCH_SKEW_MS;
+    const amount = s.amountCents;
     return (await lists.get(onCard)!).filter((t) => {
       const ref = txnRef(t);
       const at = parseCardTime(t.transactionTime);
@@ -365,36 +349,19 @@ export class SwapInteractor {
    * existing key is never refused. The advisory lock makes check-and-insert atomic per card and amount.
    */
   private async insertOrBusy(p: AgentPrincipal, r: ReturnType<SwapInteractor["validate"]>): Promise<void> {
-    const c = await this.d.pool.connect();
-    try {
-      await c.query("BEGIN");
-      await c.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`swap:${p.cardId}:${r.amountCents}`]);
-      // Privacy mode charges a card of its own per payment, so same-amount payments cannot be confused with each other.
-      const busy = (await this.d.app.privacyMode(p.userId)) ? 0 : (await c.query(
-        `SELECT 1 FROM app_checkout_swap x LEFT JOIN app_spend s ON s.spend_id = x.spend_id
-         WHERE x.card_id = $1 AND x.amount_cents = $2 AND NOT (x.agent_id = $3 AND x.idempotency_key = $4)
-           AND x.created_at >= $5
-           AND (x.status IN ('pending', 'filling', 'processing')
-             OR (x.status = 'challenge' AND s.status = 'processing')
-             OR (x.status = 'paid' AND x.card_txn_ref IS NULL AND x.review IS NULL))
-           AND NOT EXISTS (SELECT 1 FROM app_checkout_swap k WHERE k.card_id = $1 AND k.agent_id = $3 AND k.idempotency_key = $4)
-         LIMIT 1`,
-        [p.cardId, r.amountCents, p.agentId, r.idempotencyKey, new Date(this.now().getTime() - GIVE_UP_AFTER_MS)],
-      )).rowCount;
-      if (busy) {
-        throw conflictError(`another ${usd(r.amountCents)} checkout payment on this card is still being confirmed; nothing was charged. Try again in a minute`);
-      }
-      await c.query(
-        `INSERT INTO app_checkout_swap (swap_id, card_id, agent_id, idempotency_key, checkout_url, checkout_host, amount_cents, merchant, mcc, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending') ON CONFLICT (card_id, agent_id, idempotency_key) DO NOTHING`,
-        [newId(), p.cardId, p.agentId, r.idempotencyKey, r.url.href, r.url.host, r.amountCents, r.merchant, r.mcc ?? null],
-      );
-      await c.query("COMMIT");
-    } catch (e) {
-      await c.query("ROLLBACK").catch(() => undefined);
-      throw e;
-    } finally {
-      c.release();
+    const inserted = await this.d.swaps.insertUnlessBusy(
+      {
+        swapId: newId(), cardId: p.cardId, agentId: p.agentId, idempotencyKey: r.idempotencyKey,
+        checkoutUrl: r.url.href, checkoutHost: r.url.host, amountCents: r.amountCents, merchant: r.merchant, mcc: r.mcc ?? null,
+      },
+      {
+        busySince: new Date(this.now().getTime() - GIVE_UP_AFTER_MS),
+        // Privacy mode charges a card of its own per payment, so same-amount payments cannot be confused with each other.
+        skipBusyCheck: () => this.d.app.privacyMode(p.userId),
+      },
+    );
+    if (!inserted) {
+      throw conflictError(`another ${usd(r.amountCents)} checkout payment on this card is still being confirmed; nothing was charged. Try again in a minute`);
     }
   }
 
@@ -403,52 +370,42 @@ export class SwapInteractor {
    * to. A real checkout's merchant id is the acquirer's, the same for every payment to that merchant, so amount and
    * time are all we can match on; when two swaps fit, neither settles on its own.
    */
-  private async hasRival(s: Record<string, any>, at: number | undefined): Promise<boolean> {
+  private async hasRival(s: CheckoutSwap, at: number | undefined): Promise<boolean> {
     // A one-time card carries only this payment's authorization: no other payment can be mistaken for it.
-    if (s.charge_card_id) return false;
+    if (s.chargeCardId) return false;
     if (at === undefined) return true;
-    const r = await this.d.pool.query(
-      `SELECT 1 FROM app_checkout_swap x LEFT JOIN app_spend p ON p.spend_id = x.spend_id
-       WHERE x.card_id = $1 AND x.swap_id <> $2 AND x.amount_cents = $3 AND x.card_txn_ref IS NULL
-         AND (x.status IN ('pending', 'filling', 'processing', 'paid', 'needs_review') OR (x.status = 'challenge' AND p.status = 'processing'))
-         AND x.created_at <= $4 AND x.created_at >= $5 LIMIT 1`,
-      [s.card_id, s.swap_id, s.amount_cents, new Date(at + MATCH_SKEW_MS), new Date(at - GIVE_UP_AFTER_MS)],
-    );
-    return r.rowCount! > 0;
+    return this.d.swaps.hasRival(s, { from: new Date(at - GIVE_UP_AFTER_MS), to: new Date(at + MATCH_SKEW_MS) });
   }
 
   /** Claims a card transaction for a swap (unique: one transaction settles one swap) and records its MCC. */
-  private async claim(s: Record<string, any>, t: CardTransaction): Promise<boolean> {
+  private async claim(s: CheckoutSwap, t: CardTransaction): Promise<boolean> {
     const note = mccReview(s.mcc, t.merchantMcc);
-    const r = await this.d.pool.query(
-      "UPDATE app_checkout_swap SET card_txn_ref = $2, card_mcc = $3, review = COALESCE(review, $4), updated_at = now() WHERE swap_id = $1 AND card_txn_ref IS NULL",
-      [s.swap_id, txnRef(t), t.merchantMcc ?? null, note],
-    ).catch(() => ({ rowCount: 0 }));
-    if (r.rowCount === 1 && note) this.log(`swap ${s.swap_id}: ${note}`);
-    return r.rowCount === 1;
+    // Any failure (above all: the transaction is already claimed by another swap, card_txn_ref is unique) means not claimed.
+    const claimed = await this.d.swaps.claimCardTxn(s.swapId, txnRef(t)!, t.merchantMcc ?? null, note).catch(() => false);
+    if (claimed && note) this.log(`swap ${s.swapId}: ${note}`);
+    return claimed;
   }
 
-  private async confirmPaid(s: Record<string, any>, lists: Map<string, Promise<CardTransaction[]>>): Promise<void> {
+  private async confirmPaid(s: CheckoutSwap, lists: Map<string, Promise<CardTransaction[]>>): Promise<void> {
     const approved = (await this.candidates(s, lists)).filter((t) => /^(approved|successful|settled)$/i.test(t.transactionStatus ?? ""));
     const review = (note: string) => {
-      this.log(`swap ${s.swap_id}: ${note}`);
-      return this.d.pool.query("UPDATE app_checkout_swap SET review = $2, updated_at = now() WHERE swap_id = $1 AND review IS NULL", [s.swap_id, note]);
+      this.log(`swap ${s.swapId}: ${note}`);
+      return this.d.swaps.flagForReview(s.swapId, note);
     };
     if (approved.length === 1) {
       if (await this.hasRival(s, parseCardTime(approved[0]!.transactionTime))) return void (await review("another open payment of the same amount on this card could own the card authorization"));
       return void (await this.claim(s, approved[0]!));
     }
     if (approved.length > 1) return void (await review(`${approved.length} card authorizations could be this payment`));
-    if (this.now().getTime() - new Date(s.created_at).getTime() > GIVE_UP_AFTER_MS) {
+    if (this.now().getTime() - s.createdAt.getTime() > GIVE_UP_AFTER_MS) {
       await review("the checkout page said paid, but the card shows no matching authorization");
     }
   }
 
-  private async reconcileOne(s: Record<string, any>, lists: Map<string, Promise<CardTransaction[]>>): Promise<void> {
-    const swapId = s.swap_id as string;
-    const set = (status: SwapStatus, detail?: string) =>
-      this.d.pool.query("UPDATE app_checkout_swap SET status = $2, detail = COALESCE($3, detail), updated_at = now() WHERE swap_id = $1", [swapId, status, detail ?? null]);
-    const spend = (await this.d.pool.query("SELECT * FROM app_spend WHERE card_id = $1 AND agent_id = $2 AND idempotency_key = $3", [s.card_id, s.agent_id, `${SWAP_KEY_PREFIX}${swapId}`])).rows[0];
+  private async reconcileOne(s: CheckoutSwap, lists: Map<string, Promise<CardTransaction[]>>): Promise<void> {
+    const swapId = s.swapId;
+    const set = (status: SwapStatus, detail?: string) => this.d.swaps.setStatus(swapId, status, detail);
+    const spend = await this.d.swaps.findSpend(s.cardId, s.agentId, `${SWAP_KEY_PREFIX}${swapId}`);
     if (!spend) {
       // No spend row: pay never got as far as reserving, so nothing can have been charged.
       await set("failed", "interrupted before payment; nothing was charged");
@@ -458,12 +415,12 @@ export class SwapInteractor {
     if (spend.status === "declined" || spend.status === "voided") return void (await set(s.status === "challenge" ? "challenge" : "failed"));
 
     const candidates = await this.candidates(s, lists);
-    const amount = Number(s.amount_cents);
-    const age = this.now().getTime() - new Date(s.created_at).getTime();
+    const amount = s.amountCents;
+    const age = this.now().getTime() - s.createdAt.getTime();
     if (candidates.length > 1) {
       const note = `needs review: ${candidates.length} card authorizations of ${usd(amount)} could be this payment; the money is held`;
       await set("needs_review", note);
-      await this.d.app.noteSpend(spend.spend_id, note);
+      await this.d.app.noteSpend(spend.spendId, note);
       this.log(`swap ${swapId}: ${note}`);
       return;
     }
@@ -472,7 +429,7 @@ export class SwapInteractor {
       if (age > GIVE_UP_AFTER_MS) {
         const note = "needs review: the card shows no authorization for this payment yet; the money is held";
         await set("needs_review", note);
-        await this.d.app.noteSpend(spend.spend_id, note);
+        await this.d.app.noteSpend(spend.spendId, note);
         this.log(`swap ${swapId}: ${note}`);
       }
       return;
@@ -480,7 +437,7 @@ export class SwapInteractor {
     if (await this.hasRival(s, parseCardTime(t.transactionTime))) {
       const note = `needs review: another open payment of ${usd(amount)} on this card could own the card authorization; the money is held`;
       await set("needs_review", note);
-      await this.d.app.noteSpend(spend.spend_id, note);
+      await this.d.app.noteSpend(spend.spendId, note);
       this.log(`swap ${swapId}: ${note}`);
       return;
     }
@@ -488,36 +445,34 @@ export class SwapInteractor {
     if (/^(approved|successful|settled)$/i.test(status)) {
       // Claim first (unique), so one authorization can never settle two swaps.
       if (!(await this.claim(s, t))) return;
-      await this.d.app.resolveSwapSpend(spend.spend_id, { status: "approved", auth: t.authCode });
+      await this.d.app.resolveSwapSpend(spend.spendId, { status: "approved", auth: t.authCode });
       await set("paid", "confirmed on the card");
       this.log(`swap ${swapId}: approved on the card`);
     } else if (/^(declined|failed|reversed)$/i.test(status)) {
       await this.claim(s, t);
-      await this.d.app.resolveSwapSpend(spend.spend_id, { status: "voided", reason: `card declined (${status})` });
+      await this.d.app.resolveSwapSpend(spend.spendId, { status: "voided", reason: `card declined (${status})` });
       await set(s.status === "challenge" ? "challenge" : "failed", `card declined (${status})`);
     } else if (age > GIVE_UP_AFTER_MS) {
       const note = `needs review: the card shows status "${status}"; the money is held`;
       await set("needs_review", note);
-      await this.d.app.noteSpend(spend.spend_id, note);
+      await this.d.app.noteSpend(spend.spendId, note);
     }
   }
 
-  private async view(row: Record<string, any>): Promise<SwapView> {
-    const spend = row.spend_id
-      ? (await this.d.pool.query("SELECT spend_id, status, reason FROM app_spend WHERE spend_id = $1", [row.spend_id])).rows[0]
-      : undefined;
+  private async view(row: CheckoutSwap): Promise<SwapView> {
+    const spend = row.spendId ? await this.d.swaps.spendSummary(row.spendId) : undefined;
     return {
-      swapId: row.swap_id,
+      swapId: row.swapId,
       status: row.status,
-      amountCents: Number(row.amount_cents),
+      amountCents: row.amountCents,
       currency: "USD",
       merchant: row.merchant,
-      checkoutHost: row.checkout_host,
+      checkoutHost: row.checkoutHost,
       outcome: row.outcome ?? null,
       detail: row.detail ?? null,
-      payment: spend ? { paymentId: spend.spend_id, status: spend.status, reason: spend.reason ?? null } : null,
+      payment: spend ? { paymentId: spend.spendId, status: spend.status, reason: spend.reason ?? null } : null,
       underReview: row.review ?? null,
-      createdAt: new Date(row.created_at).toISOString(),
+      createdAt: row.createdAt.toISOString(),
     };
   }
 }

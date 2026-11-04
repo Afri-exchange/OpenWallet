@@ -3,13 +3,15 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import pg from "pg";
 import { AgentWallets } from "../src/lib/services/AgentWallets.js";
-import { PgDepositAddresses } from "../src/db/repositories/PgChainRepositories.js";
+import { createDepositAddressRepository } from "../src/db/repositories/createChainRepositories.js";
 import { DEFAULT_TIERS } from "../src/lib/services/tiers.js";
 import { MidenBusinessError } from "../src/adapters/virtualCards/CardLifecycle.js";
 import { CardService, ONE_TIME_TERMINATE_DAYS } from "../src/adapters/virtualCards/CardService.js";
 import type { FundingRequest } from "../src/domain/interfaces/FundingSource.js";
 import { Ledger } from "../src/lib/services/Ledger.js";
-import { PgLedgerStore } from "../src/db/repositories/PgLedgerStore.js";
+import { createDatabase } from "../src/db/client.js";
+import { migrate } from "../src/db/migrate.js";
+import { createRepositories } from "../src/db/repositories/createRepositories.js";
 import { MidenApiError } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
 import { CardholderInteractor, midFor, type CardholderContext } from "../src/lib/interactors/CardholderInteractor.js";
 import { DeveloperInteractor } from "../src/lib/interactors/DeveloperInteractor.js";
@@ -38,8 +40,10 @@ async function setup() {
   schemas.push(schema);
   const pool = new pg.Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 6 });
   pools.push(pool);
-  await new PgLedgerStore(pool).migrate();
-  const ledger = new Ledger(undefined, new PgLedgerStore(pool));
+  await migrate(pool);
+  const db = createDatabase(pool);
+  const repos = createRepositories(db);
+  const ledger = new Ledger(undefined, repos.ledger);
   let cards = 0;
   const f = {
     mainFundCalls: [] as FundingRequest[],
@@ -65,7 +69,7 @@ async function setup() {
         return `auth-${f.auths.length}`;
       },
     },
-    cards: {
+    cardIssuer: {
       issue: async (_a: string, policy: unknown) => ({ id: `card-${++cards}`, agentId: "x", policy }),
       issueOneTime: async (_kyc: unknown, amountCents: number, clientReference: string, o: { capture: boolean }) => {
         f.oneTime.push({ amountCents, clientReference, capture: o.capture });
@@ -80,12 +84,13 @@ async function setup() {
   };
   let dev: DeveloperInteractor | undefined;
   const app = new CardholderInteractor({
-    pool, ledger, wallets: new AgentWallets(ledger), addresses: new PgDepositAddresses(pool, "base-sepolia"),
+    users: repos.users, cards: repos.cards, agents: repos.agents, spends: repos.spends, fundings: repos.fundings, oneTimeCards: repos.oneTimeCards,
+    ledger, wallets: new AgentWallets(ledger), addresses: createDepositAddressRepository(db, "base-sepolia"),
     deriveAddress: (i: number) => `0x${i.toString(16).padStart(40, "0")}`, tiers: DEFAULT_TIERS, chain: "base-sepolia", sandbox: true, simulatedDeposits: true,
     onEvent: (u: string, t: string, d: Record<string, unknown>) => dev?.onEvent(u, t, d) ?? Promise.resolve(),
     ...deps,
   } as unknown as CardholderContext);
-  dev = new DeveloperInteractor({ pool, app, allowLocalWebhooks: false, publicUrl: "https://cards.example", resolve: async () => ["93.184.216.34"] });
+  dev = new DeveloperInteractor({ developers: repos.developers, webhookEvents: repos.webhookEvents, app, allowLocalWebhooks: false, publicUrl: "https://cards.example", resolve: async () => ["93.184.216.34"] });
   return { pool, app, dev, f };
 }
 type S = Awaited<ReturnType<typeof setup>>;

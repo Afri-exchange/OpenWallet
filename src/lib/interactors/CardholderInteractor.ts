@@ -1,7 +1,16 @@
 import { createHash, randomBytes } from "node:crypto";
-import type pg from "pg";
 import type { AgentWallets } from "../services/AgentWallets.js";
-import type { PgDepositAddresses } from "../../db/repositories/PgChainRepositories.js";
+import type { DepositAddressRepository } from "../../domain/repositories/DepositAddressRepository.js";
+import type { AgentRepository } from "../../domain/repositories/AgentRepository.js";
+import type { CardRepository } from "../../domain/repositories/CardRepository.js";
+import type { FundingRepository } from "../../domain/repositories/FundingRepository.js";
+import type { OneTimeCardRepository } from "../../domain/repositories/OneTimeCardRepository.js";
+import type { SpendRepository } from "../../domain/repositories/SpendRepository.js";
+import type { UserRepository } from "../../domain/repositories/UserRepository.js";
+import type { Agent, Card, Spend } from "../../domain/types/Entities.js";
+import type { OpenSpendResult } from "../../domain/repositories/SpendRepository.js";
+import type { FundingStatus } from "../../domain/repositories/FundingRepository.js";
+import type { OneTimeCardStatus } from "../../domain/repositories/OneTimeCardRepository.js";
 import { MidenBusinessError, type CardLifecycle, type CardTransaction } from "../../adapters/virtualCards/CardLifecycle.js";
 import { evaluate, type SpendPolicy } from "../services/spendPolicy.js";
 import type { CardService } from "../../adapters/virtualCards/CardService.js";
@@ -15,14 +24,19 @@ import type { IndividualKyc } from "../../adapters/onboarding/onboarding.js";
 import { AgentCardsError, badGatewayError, badRequestError, conflictError, forbiddenError, notFoundError, tooManyRequestsError, unavailableError, unprocessableError } from "../../errors.js";
 
 export interface CardholderContext {
-  pool: pg.Pool;
+  users: UserRepository;
+  cards: CardRepository;
+  agents: AgentRepository;
+  spends: SpendRepository;
+  fundings: FundingRepository;
+  oneTimeCards: OneTimeCardRepository;
   ledger: Ledger;
   miden: MidenClient;
   lifecycle: CardLifecycle;
-  cards: Pick<CardService, "issue" | "issueOneTime">;
+  cardIssuer: Pick<CardService, "issue" | "issueOneTime">;
   funding: FundingSource;
   wallets: AgentWallets;
-  addresses: PgDepositAddresses;
+  addresses: DepositAddressRepository;
   /**
    * The deposit-address provider: the address for a unique index. Our HD wallet today (sync); a custody
    * provider such as Utila would call its API here (hence async), keyed by the same index.
@@ -97,7 +111,6 @@ const ID_TYPES = new Set(["PASSPORT", "NATIONAL_ID", "DRIVERS_LICENSE", "VOTERS_
 const hashToken = (t: string) => createHash("sha256").update(t).digest("hex");
 const newId = (prefix: string, bytes = 6) => `${prefix}_${randomBytes(bytes).toString("hex")}`;
 const newToken = (prefix: string) => `${prefix}_${randomBytes(32).toString("base64url")}`;
-const num = (v: string | number | null) => (v === null ? 0 : Number(v));
 const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 /**
  * Per-spend merchant id for Miden's simulated authorization. It comes back as `merchantMid` on the card's
@@ -146,20 +159,19 @@ export class CardholderInteractor {
 
   private emitForCard(cardId: string, type: string, data: Record<string, unknown>): void {
     if (!this.d.onEvent) return;
-    void this.d.pool.query("SELECT user_id FROM app_card WHERE card_id = $1", [cardId])
-      .then((r) => r.rows[0] && this.emit(r.rows[0].user_id, type, { cardId, ...data }))
+    void this.d.cards.userIdOf(cardId)
+      .then((userId) => userId && this.emit(userId, type, { cardId, ...data }))
       .catch((e) => this.log(`event ${type} for card ${cardId}: ${errText(e)}`));
   }
 
   /** Reports a spend that has just reached a final status. */
   private emitSpend(spendId: string): void {
     if (!this.d.onEvent) return;
-    void this.d.pool.query("SELECT s.*, c.user_id FROM app_spend s JOIN app_card c ON c.card_id = s.card_id WHERE s.spend_id = $1", [spendId])
-      .then((r) => {
-        const s = r.rows[0];
+    void this.d.spends.findWithOwner(spendId)
+      .then((s) => {
         if (!s || s.status === "processing") return;
-        this.emit(s.user_id, "spend.settled", {
-          spendId, cardId: s.card_id, agentId: s.agent_id, status: s.status, amountCents: num(s.amount_cents), merchant: s.merchant, mcc: s.mcc, reason: s.reason,
+        this.emit(s.userId, "spend.settled", {
+          spendId, cardId: s.cardId, agentId: s.agentId, status: s.status, amountCents: s.amountCents, merchant: s.merchant, mcc: s.mcc, reason: s.reason,
         });
       })
       .catch((e) => this.log(`event spend.settled for ${spendId}: ${errText(e)}`));
@@ -169,15 +181,10 @@ export class CardholderInteractor {
 
   /** Rebuilds in-memory agent state from Postgres and settles anything a crash left half done. */
   async restore(): Promise<void> {
-    const agents = await this.d.pool.query("SELECT * FROM app_agent");
-    for (const a of agents.rows) this.d.wallets.create(a.card_id, a.agent_id, policyOf(a));
+    for (const a of await this.d.agents.all()) this.d.wallets.create(a.cardId, a.agentId, policyOf(a));
     const since = new Date(this.now().getTime() - 2 * 86_400_000);
     // Processing spends count too: their money is held until reconcileSpends() learns what the card did.
-    const spends = await this.d.pool.query(
-      "SELECT spend_id, card_id, agent_id, amount_cents, created_at FROM app_spend WHERE status IN ('approved', 'processing') AND created_at >= $1",
-      [since],
-    );
-    for (const s of spends.rows) this.d.wallets.restoreSpend(s.card_id, s.agent_id, s.spend_id, num(s.amount_cents), s.created_at);
+    for (const s of await this.d.spends.heldSince(since)) this.d.wallets.restoreSpend(s.cardId, s.agentId, s.spendId, s.amountCents, s.createdAt);
   }
 
   // ---------- users ----------
@@ -187,11 +194,8 @@ export class CardholderInteractor {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw badRequestError("email is not valid");
     const userId = newId("u");
     const token = newToken("uk");
-    try {
-      await this.d.pool.query("INSERT INTO app_user (id, email, token_hash) VALUES ($1, $2, $3)", [userId, email, hashToken(token)]);
-    } catch (e) {
-      if ((e as { code?: string }).code === "23505") throw conflictError("that email already has an account");
-      throw e;
+    if ((await this.d.users.create({ id: userId, email, tokenHash: hashToken(token) })) === "duplicate") {
+      throw conflictError("that email already has an account");
     }
     return { userId, token };
   }
@@ -206,40 +210,32 @@ export class CardholderInteractor {
     const email = requireText(emailIn, "email", 254).toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw badRequestError("email is not valid");
     if (privacyIn !== undefined && privacyIn !== null && typeof privacyIn !== "boolean") throw badRequestError("privacyMode must be true or false");
-    const existing = await this.d.pool.query("SELECT id FROM app_user WHERE developer_id = $1 AND external_id = $2", [developerId, externalId]);
-    if (existing.rows[0]) return { userId: existing.rows[0].id, created: false };
+    const existing = await this.d.users.findIdByExternalId(developerId, externalId);
+    if (existing) return { userId: existing, created: false };
     // Privacy mode is fixed at creation: the developer's default unless this user is created with an explicit choice.
     const privacy = typeof privacyIn === "boolean"
       ? privacyIn
-      : (await this.d.pool.query("SELECT privacy_mode FROM app_developer WHERE id = $1", [developerId])).rows[0]?.privacy_mode === true;
+      : await this.d.users.developerPrivacyDefault(developerId);
     const userId = newId("u");
-    try {
-      // A token nobody is given: the owner API needs a uk_ token, and this one is never shown.
-      await this.d.pool.query(
-        "INSERT INTO app_user (id, email, token_hash, developer_id, external_id, privacy_mode) VALUES ($1, $2, $3, $4, $5, $6)",
-        [userId, email, hashToken(newToken("uk")), developerId, externalId, privacy],
-      );
-    } catch (e) {
-      if ((e as { code?: string }).code === "23505") {
-        const again = await this.d.pool.query("SELECT id FROM app_user WHERE developer_id = $1 AND external_id = $2", [developerId, externalId]);
-        if (again.rows[0]) return { userId: again.rows[0].id, created: false };
-        throw conflictError("that email already has an account");
-      }
-      throw e;
+    // A token nobody is given: the owner API needs a uk_ token, and this one is never shown.
+    const outcome = await this.d.users.create({ id: userId, email, tokenHash: hashToken(newToken("uk")), developerId, externalId, privacyMode: privacy });
+    if (outcome === "duplicate") {
+      const again = await this.d.users.findIdByExternalId(developerId, externalId);
+      if (again) return { userId: again, created: false };
+      throw conflictError("that email already has an account");
     }
     return { userId, created: true };
   }
 
   /** Whether this user's payments each use a fresh one-time card. */
   async privacyMode(userId: string): Promise<boolean> {
-    const r = await this.d.pool.query("SELECT privacy_mode FROM app_user WHERE id = $1", [userId]);
-    return r.rows[0]?.privacy_mode === true;
+    return (await this.d.users.findById(userId))?.privacyMode === true;
   }
 
   /** The user's id and the developer who owns them, if any. */
   async userOwner(userId: string): Promise<{ developerId: string | null; externalId: string | null } | undefined> {
-    const r = await this.d.pool.query("SELECT developer_id, external_id FROM app_user WHERE id = $1", [userId]);
-    return r.rows[0] ? { developerId: r.rows[0].developer_id, externalId: r.rows[0].external_id } : undefined;
+    const u = await this.d.users.findById(userId);
+    return u ? { developerId: u.developerId, externalId: u.externalId } : undefined;
   }
 
   /** Mints a session for one of the developer's users. The raw token is returned once. */
@@ -248,34 +244,32 @@ export class CardholderInteractor {
     if (!owner || owner.developerId !== developerId) throw notFoundError("user not found");
     const token = newToken("us");
     const expiresAt = new Date(this.now().getTime() + ttlSeconds * 1000);
-    await this.d.pool.query("INSERT INTO app_session (token_hash, user_id, developer_id, expires_at) VALUES ($1, $2, $3, $4)", [hashToken(token), userId, developerId, expiresAt]);
+    await this.d.users.createSession({ tokenHash: hashToken(token), userId, developerId, expiresAt });
     // Sessions are cheap; keep the table small.
-    await this.d.pool.query("DELETE FROM app_session WHERE expires_at < $1", [new Date(this.now().getTime() - 86_400_000)]);
+    await this.d.users.deleteSessionsExpiredBefore(new Date(this.now().getTime() - 86_400_000));
     return { token, expiresAt: expiresAt.toISOString() };
   }
 
   async userBySession(token: string): Promise<string | undefined> {
-    const r = await this.d.pool.query("SELECT user_id FROM app_session WHERE token_hash = $1 AND expires_at > $2", [hashToken(token), this.now()]);
-    return r.rows[0]?.user_id;
+    return this.d.users.userIdBySession(hashToken(token), this.now());
   }
 
   /** Replaces the user's token; the old one stops working at once. */
   async rotateToken(userId: string): Promise<{ token: string }> {
     const token = newToken("uk");
-    await this.d.pool.query("UPDATE app_user SET token_hash = $2 WHERE id = $1", [userId, hashToken(token)]);
+    await this.d.users.setTokenHash(userId, hashToken(token));
     return { token };
   }
 
   async userByToken(token: string): Promise<string | undefined> {
-    const r = await this.d.pool.query("SELECT id FROM app_user WHERE token_hash = $1", [hashToken(token)]);
-    return r.rows[0]?.id;
+    return this.d.users.findIdByTokenHash(hashToken(token));
   }
 
   /** Sends the user's identity straight to Miden. Nothing but the reference and status is kept. */
   async submitKyc(userId: string, input: Partial<IndividualKyc>): Promise<{ kycStatus: string }> {
     const user = await this.user(userId);
-    if (user.kyc_status === "Approved") throw conflictError("KYC is already approved");
-    if (user.kyc_status === "Initiated" || user.kyc_status === "Pending") throw conflictError("KYC is already in review");
+    if (user.kycStatus === "Approved") throw conflictError("KYC is already approved");
+    if (user.kycStatus === "Initiated" || user.kycStatus === "Pending") throw conflictError("KYC is already in review");
     const kyc = validateKyc(input);
     // A fresh reference per attempt, so a resubmission after rejection is a new Miden request.
     const reference = `kyc-${userId}-${randomBytes(3).toString("hex")}`;
@@ -301,10 +295,10 @@ export class CardholderInteractor {
       throw unprocessableError(`Miden rejected the KYC submission: ${res.responseMessage ?? res.responseCode ?? "unknown error"}`);
     }
     const status = res.kycStatus ?? "Initiated";
-    await this.d.pool.query("UPDATE app_user SET kyc_reference = $2, kyc_status = $3 WHERE id = $1", [userId, reference, status]);
+    await this.d.users.setKycSubmission(userId, reference, status);
     // The submission is recorded; a failed status read is retried by the background poller.
     await this.refresh(userId).catch((e) => this.log(`kyc ${userId}: refresh after submit failed: ${errText(e)}`));
-    return { kycStatus: (await this.user(userId)).kyc_status };
+    return { kycStatus: (await this.user(userId)).kycStatus };
   }
 
   /** Reads KYC status from Miden and, once approved, issues the user's card and deposit address. Safe to repeat. */
@@ -320,24 +314,21 @@ export class CardholderInteractor {
     const user = await this.user(userId);
     const existing = await this.cardOf(userId);
     if (existing) {
-      await this.ensureDepositAddress(existing.card_id);
+      await this.ensureDepositAddress(existing.cardId);
       return;
     }
-    if (!user.kyc_reference) return;
-    const kyc = await this.d.lifecycle.kycStatus(user.kyc_reference);
-    if (kyc.status !== user.kyc_status) {
-      await this.d.pool.query("UPDATE app_user SET kyc_status = $2 WHERE id = $1", [userId, kyc.status]);
+    if (!user.kycReference) return;
+    const kyc = await this.d.lifecycle.kycStatus(user.kycReference);
+    if (kyc.status !== user.kycStatus) {
+      await this.d.users.setKycStatus(userId, kyc.status);
       this.emit(userId, "kyc.updated", { kycStatus: kyc.status });
     }
     if (kyc.status !== "Approved" || !kyc.customerId || !kyc.kycToken) return;
-    const limits = this.d.tiers[user.tier as Tier];
+    const limits = this.d.tiers[user.tier];
     const policy: SpendPolicy = { perTransactionCents: limits.perTransactionCents, dailyCents: limits.dailyCents };
     // clientReference is stable per user, so the Reference header makes a retried issuance idempotent for 24h.
-    const card = await this.d.cards.issue(`user-${userId}`, policy, { customerId: kyc.customerId, kycToken: kyc.kycToken }, `card-${userId}`);
-    await this.d.pool.query(
-      "INSERT INTO app_card (card_id, user_id, customer_id, per_txn_cents, daily_cents) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (user_id) DO NOTHING",
-      [card.id, userId, kyc.customerId, policy.perTransactionCents, policy.dailyCents],
-    );
+    const card = await this.d.cardIssuer.issue(`user-${userId}`, policy, { customerId: kyc.customerId, kycToken: kyc.kycToken }, `card-${userId}`);
+    await this.d.cards.createIfAbsent({ cardId: card.id, userId, customerId: kyc.customerId, perTxnCents: policy.perTransactionCents, dailyCents: policy.dailyCents });
     this.log(`card issued for ${userId}`);
     this.emit(userId, "card.issued", { cardId: card.id });
     await this.ensureDepositAddress(card.id);
@@ -355,12 +346,11 @@ export class CardholderInteractor {
   }
 
   private async doEnsureDepositAddress(cardId: string): Promise<string> {
-    const have = await this.d.pool.query("SELECT address FROM deposit_address WHERE card_id = $1 AND derivation_index IS NOT NULL ORDER BY derivation_index LIMIT 1", [cardId]);
-    if (have.rows[0]) return have.rows[0].address;
-    const idx = num((await this.d.pool.query("SELECT nextval('deposit_derivation_seq') AS i")).rows[0].i);
+    const have = await this.d.addresses.issuedAddressOf(cardId);
+    if (have) return have;
+    const idx = await this.d.addresses.nextDerivationIndex();
     const address = (await this.d.deriveAddress(idx)).toLowerCase();
-    await this.d.addresses.add(address, cardId);
-    await this.d.pool.query("UPDATE deposit_address SET derivation_index = $2 WHERE address = $1", [address, idx]);
+    await this.d.addresses.assign(address, cardId, idx);
     return address;
   }
 
@@ -368,26 +358,26 @@ export class CardholderInteractor {
   async overview(userId: string) {
     const user = await this.user(userId);
     const card = await this.cardOf(userId);
-    const base = { userId, email: user.email as string, tier: user.tier as Tier, kycStatus: user.kyc_status as string, privacyMode: user.privacy_mode === true, sandbox: this.d.sandbox, simulatedDeposits: !!(this.d.sandbox && this.d.simulatedDeposits) };
+    const base = { userId, email: user.email, tier: user.tier as Tier, kycStatus: user.kycStatus, privacyMode: user.privacyMode, sandbox: this.d.sandbox, simulatedDeposits: !!(this.d.sandbox && this.d.simulatedDeposits) };
     if (!card) return { ...base, card: null };
-    const cardId = card.card_id as string;
+    const cardId = card.cardId;
     const [holding, pending, onCard, address, agents, fundings, deposits] = await Promise.all([
       this.d.ledger.balance(accounts.holding(cardId)),
       this.d.ledger.balance(accounts.pending(cardId)),
       this.d.ledger.balance(accounts.card(cardId)),
-      this.d.pool.query("SELECT address FROM deposit_address WHERE card_id = $1 AND derivation_index IS NOT NULL ORDER BY derivation_index LIMIT 1", [cardId]),
+      this.d.addresses.issuedAddressOf(cardId),
       this.agentsOf(cardId),
-      this.d.pool.query("SELECT funding_id, amount_cents, status, detail, created_at FROM app_funding WHERE card_id = $1 ORDER BY created_at DESC LIMIT 20", [cardId]),
+      this.d.fundings.recentByCard(cardId, 20),
       this.d.ledger.history(accounts.holding(cardId)),
     ]);
     const midenBalance = await this.d.lifecycle.cardBalance(cardId).catch(() => null);
-    const funded = num((await this.d.pool.query("SELECT COALESCE(sum(amount_cents), 0) AS s FROM app_funding WHERE card_id = $1 AND status IN ('reserved', 'completed')", [cardId])).rows[0].s);
+    const funded = await this.d.fundings.committedCents(cardId);
     const cap = this.d.tiers[user.tier as Tier].lifetimeFundedCents;
     return {
       ...base,
       card: {
         cardId,
-        limits: { perTransactionCents: num(card.per_txn_cents), dailyCents: num(card.daily_cents) },
+        limits: { perTransactionCents: card.perTxnCents, dailyCents: card.dailyCents },
         lifetimeFundingCapCents: this.d.tiers[user.tier as Tier].lifetimeFundedCents,
         balances: {
           awaitingFundingCents: holding,
@@ -397,7 +387,7 @@ export class CardholderInteractor {
         },
         lifetimeFundedCents: funded,
         midenCardBalanceDollars: midenBalance,
-        deposit: { chain: this.d.chain, asset: "USDC", address: address.rows[0]?.address ?? null, networks: this.d.depositNetworks ?? [this.d.chain, "ethereum-sepolia"], rail: this.d.depositRail ?? "chain" },
+        deposit: { chain: this.d.chain, asset: "USDC", address: address ?? null, networks: this.d.depositNetworks ?? [this.d.chain, "ethereum-sepolia"], rail: this.d.depositRail ?? "chain" },
         deposits: deposits.filter((t) => t.kind === "deposit").reverse().slice(0, 20).map((t) => ({
           reference: t.reference,
           amountCents: t.postings.find((p) => p.account === accounts.holding(cardId))?.amountCents ?? 0,
@@ -405,7 +395,7 @@ export class CardholderInteractor {
           chain: t.idempotencyKey.split(":")[1],
           at: t.createdAt,
         })),
-        fundings: fundings.rows.map((f) => ({ fundingId: f.funding_id, amountCents: num(f.amount_cents), status: f.status, detail: f.detail, at: f.created_at })),
+        fundings: fundings.map((f) => ({ fundingId: f.fundingId, amountCents: f.amountCents, status: f.status, detail: f.detail, at: f.createdAt })),
         agents,
       },
     };
@@ -417,7 +407,7 @@ export class CardholderInteractor {
     const amountCents = requireCents(amountCentsIn, "amountCents");
     if (amountCents > 100_000) throw badRequestError("simulated deposits are capped at $1,000");
     const card = await this.requireCard(userId);
-    await this.d.ledger.confirmDeposit({ chain: "sandbox-sim", asset: "USDC", cardId: card.card_id, amountCents, txHash: newId("sim", 16), logIndex: 0 });
+    await this.d.ledger.confirmDeposit({ chain: "sandbox-sim", asset: "USDC", cardId: card.cardId, amountCents, txHash: newId("sim", 16), logIndex: 0 });
     void this.fundPending().catch((e) => this.log(`funding: ${errText(e)}`));
   }
 
@@ -432,8 +422,8 @@ export class CardholderInteractor {
     if (!hint) throw badRequestError(`id must look like ${SIM_DEPOSIT_PREFIX}<0x address>_<USDC|USDT>_<amount in dollars>[_<nonce>]`);
     if (hint.amountCents > 100_000) throw badRequestError("simulated deposits are capped at $1,000");
     const card = await this.requireCard(userId);
-    if ((await this.d.addresses.cardFor(hint.address)) !== card.card_id) throw notFoundError("that is not one of your deposit addresses");
-    await this.d.ledger.confirmDeposit({ chain: "sandbox-sim", asset: hint.asset, cardId: card.card_id, amountCents: hint.amountCents, txHash: hint.id, logIndex: 0 });
+    if ((await this.d.addresses.cardFor(hint.address)) !== card.cardId) throw notFoundError("that is not one of your deposit addresses");
+    await this.d.ledger.confirmDeposit({ chain: "sandbox-sim", asset: hint.asset, cardId: card.cardId, amountCents: hint.amountCents, txHash: hint.id, logIndex: 0 });
     void this.fundPending().catch((e) => this.log(`funding: ${errText(e)}`));
     return { amountCents: hint.amountCents };
   }
@@ -453,31 +443,27 @@ export class CardholderInteractor {
 
   private async doFundPending(): Promise<void> {
     {
-      const open = await this.d.pool.query("SELECT funding_id, card_id, amount_cents, created_at FROM app_funding WHERE status = 'reserved' ORDER BY created_at");
-      for (const f of open.rows) {
-        const stale = this.now().getTime() - new Date(f.created_at).getTime() > RESEND_WINDOW_MS;
+      for (const f of await this.d.fundings.reserved()) {
+        const stale = this.now().getTime() - f.createdAt.getTime() > RESEND_WINDOW_MS;
         // Past the Reference window a re-send could top up twice, so only look for the first one.
-        if (stale) await this.findLostFunding(f.funding_id, f.card_id, num(f.amount_cents));
-        else await this.settleFunding(f.funding_id, f.card_id, num(f.amount_cents));
+        if (stale) await this.findLostFunding(f.fundingId, f.cardId, f.amountCents);
+        else await this.settleFunding(f.fundingId, f.cardId, f.amountCents);
       }
-      const cards = await this.d.pool.query("SELECT c.card_id, u.tier FROM app_card c JOIN app_user u ON u.id = c.user_id");
-      for (const c of cards.rows) {
-        const holding = await this.d.ledger.balance(accounts.holding(c.card_id));
+      for (const c of await this.d.cards.allWithTier()) {
+        const holding = await this.d.ledger.balance(accounts.holding(c.cardId));
         if (holding < MIN_FUNDING_CENTS) continue;
-        const done = await this.d.pool.query("SELECT COALESCE(sum(amount_cents), 0) AS s FROM app_funding WHERE card_id = $1 AND status IN ('reserved', 'completed')", [c.card_id]);
-        const room = this.d.tiers[c.tier as Tier].lifetimeFundedCents - num(done.rows[0].s);
+        const room = this.d.tiers[c.tier as Tier].lifetimeFundedCents - (await this.d.fundings.committedCents(c.cardId));
         const amount = Math.min(holding, room);
         if (amount < MIN_FUNDING_CENTS) continue; // over the tier's lifetime cap: stays in holding until the user upgrades
         const fundingId = newId("fund", 8);
-        await this.d.pool.query("INSERT INTO app_funding (funding_id, card_id, amount_cents, status) VALUES ($1, $2, $3, 'reserved')", [fundingId, c.card_id, amount]);
-        await this.settleFunding(fundingId, c.card_id, amount);
+        await this.d.fundings.create({ fundingId, cardId: c.cardId, amountCents: amount });
+        await this.settleFunding(fundingId, c.cardId, amount);
       }
     }
   }
 
   private async settleFunding(fundingId: string, cardId: string, amountCents: number): Promise<void> {
-    const set = (status: string, detail: string | null) =>
-      this.d.pool.query("UPDATE app_funding SET status = $2, detail = $3, updated_at = now() WHERE funding_id = $1", [fundingId, status, detail]);
+    const set = (status: FundingStatus, detail: string | null) => this.d.fundings.setStatus(fundingId, status, detail);
     try {
       await this.d.ledger.reserveFunding({ cardId, amountCents, fundingId });
     } catch (e) {
@@ -536,12 +522,12 @@ export class CardholderInteractor {
     const t = txs.find((x) => x.transactionReference === fundingId);
     if (t && /^(approved|successful)$/i.test(t.transactionStatus ?? "")) {
       await this.d.ledger.completeFunding({ cardId, amountCents, fundingId });
-      await this.d.pool.query("UPDATE app_funding SET status = 'completed', detail = $2, updated_at = now() WHERE funding_id = $1", [fundingId, `found on the card (${t.id ?? "?"})`]);
+      await this.d.fundings.setStatus(fundingId, "completed", `found on the card (${t.id ?? "?"})`);
       this.emitForCard(cardId, "funding.completed", { fundingId, amountCents });
       this.log(`funding ${fundingId}: found on the card, completed`);
     } else if (t && /^(declined|failed)$/i.test(t.transactionStatus ?? "")) {
       await this.d.ledger.releaseFunding({ cardId, amountCents, fundingId });
-      await this.d.pool.query("UPDATE app_funding SET status = 'released', detail = $2, updated_at = now() WHERE funding_id = $1", [fundingId, `card shows ${t.transactionStatus}`]);
+      await this.d.fundings.setStatus(fundingId, "released", `card shows ${t.transactionStatus}`);
     } else {
       this.log(`funding ${fundingId}: not on the card's recent CardFunding list${t ? ` (status ${t.transactionStatus})` : ""}; left reserved for review`);
     }
@@ -560,24 +546,24 @@ export class CardholderInteractor {
     if (mccs) requested.allowedMccs = mccs;
     checkAgentLimits(requested, card);
     // An agent never gets more room than its owner's card.
-    const policy = capPolicy({ perTransactionCents: num(card.per_txn_cents), dailyCents: num(card.daily_cents), lifetimeFundedCents: 0 }, requested);
+    const policy = capPolicy({ perTransactionCents: card.perTxnCents, dailyCents: card.dailyCents, lifetimeFundedCents: 0 }, requested);
     const agentId = newId("a", 4);
     const token = newToken("ak");
-    await this.d.pool.query(
-      "INSERT INTO app_agent (card_id, agent_id, name, token_hash, per_txn_cents, daily_cents, allowed_mccs) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-      [card.card_id, agentId, name, hashToken(token), policy.perTransactionCents, policy.dailyCents, policy.allowedMccs ?? null],
-    );
-    this.d.wallets.create(card.card_id, agentId, policy);
+    await this.d.agents.create({
+      cardId: card.cardId, agentId, name, tokenHash: hashToken(token),
+      perTxnCents: policy.perTransactionCents, dailyCents: policy.dailyCents, allowedMccs: policy.allowedMccs ?? null,
+    });
+    this.d.wallets.create(card.cardId, agentId, policy);
     return { agentId, name, policy, token };
   }
 
   async fundAgent(userId: string, agentId: string, amountCentsIn: unknown, key?: unknown): Promise<void> {
     const card = await this.requireCard(userId);
-    const agent = await this.requireAgent(card.card_id, agentId);
-    if (agent.revoked_at) throw conflictError("agent is revoked");
+    const agent = await this.requireAgent(card.cardId, agentId);
+    if (agent.revokedAt) throw conflictError("agent is revoked");
     const amountCents = requireCents(amountCentsIn, "amountCents");
-    const allocationId = typeof key === "string" && key ? `${card.card_id}:${agentId}:${key}` : newId("alloc", 8);
-    await this.d.wallets.fund(card.card_id, agentId, amountCents, allocationId).catch((e) => {
+    const allocationId = typeof key === "string" && key ? `${card.cardId}:${agentId}:${key}` : newId("alloc", 8);
+    await this.d.wallets.fund(card.cardId, agentId, amountCents, allocationId).catch((e) => {
       if (/insufficient/.test(errText(e))) throw conflictError("not enough unallocated money on the card");
       throw e;
     });
@@ -585,15 +571,15 @@ export class CardholderInteractor {
 
   async reclaimAgent(userId: string, agentId: string, amountCentsIn?: unknown): Promise<number> {
     const card = await this.requireCard(userId);
-    await this.requireAgent(card.card_id, agentId);
+    await this.requireAgent(card.cardId, agentId);
     // A payment can debit the agent between our balance read and the reclaim: re-read and try once more.
     for (let attempt = 0; ; attempt++) {
-      const balance = await this.d.wallets.balance(card.card_id, agentId);
+      const balance = await this.d.wallets.balance(card.cardId, agentId);
       const amountCents = amountCentsIn === undefined ? balance : requireCents(amountCentsIn, "amountCents");
       if (amountCents === 0) return 0;
       if (amountCents > balance) throw conflictError("agent does not hold that much");
       try {
-        await this.d.wallets.reclaim(card.card_id, agentId, amountCents, newId("ret", 8));
+        await this.d.wallets.reclaim(card.cardId, agentId, amountCents, newId("ret", 8));
         return amountCents;
       } catch (e) {
         if (!(e instanceof LedgerError) && !/insufficient/.test(errText(e))) throw e;
@@ -605,47 +591,45 @@ export class CardholderInteractor {
   /** Revokes the agent's token for good and returns its money to the card. */
   async revokeAgent(userId: string, agentId: string): Promise<void> {
     const card = await this.requireCard(userId);
-    await this.d.pool.query("UPDATE app_agent SET revoked_at = COALESCE(revoked_at, now()) WHERE card_id = $1 AND agent_id = $2", [card.card_id, agentId]);
+    await this.d.agents.revoke(card.cardId, agentId);
     await this.reclaimAgent(userId, agentId);
   }
 
   async updateAgentLimits(userId: string, agentId: string, body: { perTransactionCents?: unknown; dailyCents?: unknown; allowedMccs?: unknown }) {
     const card = await this.requireCard(userId);
-    const agent = await this.requireAgent(card.card_id, agentId);
+    const agent = await this.requireAgent(card.cardId, agentId);
     const requested: SpendPolicy = {
-      perTransactionCents: body.perTransactionCents === undefined ? num(agent.per_txn_cents) : requireCents(body.perTransactionCents, "perTransactionCents"),
-      dailyCents: body.dailyCents === undefined ? num(agent.daily_cents) : requireCents(body.dailyCents, "dailyCents"),
+      perTransactionCents: body.perTransactionCents === undefined ? agent.perTxnCents : requireCents(body.perTransactionCents, "perTransactionCents"),
+      dailyCents: body.dailyCents === undefined ? agent.dailyCents : requireCents(body.dailyCents, "dailyCents"),
     };
-    const mccs = body.allowedMccs === undefined ? (agent.allowed_mccs ?? undefined) : parseMccs(body.allowedMccs);
+    const mccs = body.allowedMccs === undefined ? (agent.allowedMccs ?? undefined) : parseMccs(body.allowedMccs);
     if (mccs) requested.allowedMccs = mccs;
     checkAgentLimits(requested, card);
-    const policy = capPolicy({ perTransactionCents: num(card.per_txn_cents), dailyCents: num(card.daily_cents), lifetimeFundedCents: 0 }, requested);
-    await this.d.pool.query(
-      "UPDATE app_agent SET per_txn_cents = $3, daily_cents = $4, allowed_mccs = $5 WHERE card_id = $1 AND agent_id = $2",
-      [card.card_id, agentId, policy.perTransactionCents, policy.dailyCents, policy.allowedMccs ?? null],
-    );
-    this.d.wallets.setPolicy(card.card_id, agentId, policy);
+    const policy = capPolicy({ perTransactionCents: card.perTxnCents, dailyCents: card.dailyCents, lifetimeFundedCents: 0 }, requested);
+    await this.d.agents.updateLimits(card.cardId, agentId, {
+      perTxnCents: policy.perTransactionCents, dailyCents: policy.dailyCents, allowedMccs: policy.allowedMccs ?? null,
+    });
+    this.d.wallets.setPolicy(card.cardId, agentId, policy);
     return policy;
   }
 
   private async agentsOf(cardId: string) {
-    const rows = (await this.d.pool.query("SELECT * FROM app_agent WHERE card_id = $1 ORDER BY created_at", [cardId])).rows;
+    const rows = await this.d.agents.listByCard(cardId);
     return Promise.all(rows.map(async (a) => ({
-      agentId: a.agent_id as string,
-      name: a.name as string,
-      revoked: a.revoked_at !== null,
+      agentId: a.agentId,
+      name: a.name,
+      revoked: a.revokedAt !== null,
       policy: policyOf(a),
-      balanceCents: await this.d.wallets.balance(cardId, a.agent_id),
-      spentTodayCents: await this.spentToday(cardId, a.agent_id),
-      recent: await this.spends(cardId, a.agent_id, 10),
+      balanceCents: await this.d.wallets.balance(cardId, a.agentId),
+      spentTodayCents: await this.spentToday(cardId, a.agentId),
+      recent: await this.spends(cardId, a.agentId, 10),
     })));
   }
 
   // ---------- privacy mode: one-time cards ----------
 
   private async isPrivacyCard(cardId: string): Promise<boolean> {
-    const r = await this.d.pool.query("SELECT u.privacy_mode FROM app_card c JOIN app_user u ON u.id = c.user_id WHERE c.card_id = $1", [cardId]);
-    return r.rows[0]?.privacy_mode === true;
+    return this.d.cards.ownerHasPrivacyMode(cardId);
   }
 
   /**
@@ -657,31 +641,26 @@ export class CardholderInteractor {
    */
   async chargeCardFor(p: AgentPrincipal, spendId: string, amountCents: number, opts: { needDetails: boolean }): Promise<string> {
     if (!(await this.privacyMode(p.userId))) return p.cardId;
-    const pool = this.d.pool;
-    const prior = (await pool.query("SELECT * FROM app_one_time_card WHERE spend_id = $1", [spendId])).rows[0];
-    if (prior?.status === "ready" && prior.card_id) return prior.card_id;
+    const prior = await this.d.oneTimeCards.findBySpend(spendId);
+    if (prior?.status === "ready" && prior.cardId) return prior.cardId;
     // Miden loads at least $1 on a Lite card, so a smaller payment would park the rest of a dollar on a single-swipe card.
     if (!prior && amountCents < ONE_TIME_MIN_CENTS) throw unprocessableError("privacy mode needs a payment of at least $1.00 (the smallest one-time card); nothing was charged");
     // A card that is refused or abandoned keeps its funds until it terminates, so cap how fast one user can make cards.
     if (!prior) {
-      const n = Number((await pool.query("SELECT count(*) AS n FROM app_one_time_card WHERE user_id = $1 AND created_at > now() - interval '24 hours'", [p.userId])).rows[0].n);
+      const n = await this.d.oneTimeCards.countStartedInLastDay(p.userId);
       if (n >= ONE_TIME_MAX_PER_DAY) throw tooManyRequestsError(`privacy mode allows ${ONE_TIME_MAX_PER_DAY} one-time cards a day per user; nothing was charged`);
     }
     if (prior) throw conflictError("a one-time card for this payment was already attempted and needs a person to look at it; nothing was charged");
     const rowId = newId("ot", 8);
-    const mark = (status: string, detail: string | null, cardId?: string) =>
-      pool.query("UPDATE app_one_time_card SET status = $2, detail = $3, card_id = COALESCE($4, card_id), updated_at = now() WHERE one_time_id = $1", [rowId, status, detail, cardId ?? null]);
-    try {
-      await pool.query("INSERT INTO app_one_time_card (one_time_id, user_id, spend_id, amount_cents, status) VALUES ($1, $2, $3, $4, 'issuing')", [rowId, p.userId, spendId, amountCents]);
-    } catch (e) {
+    const mark = (status: OneTimeCardStatus, detail: string | null, cardId?: string) => this.d.oneTimeCards.mark(rowId, status, detail, cardId);
+    if ((await this.d.oneTimeCards.start({ oneTimeId: rowId, userId: p.userId, spendId, amountCents })) === "duplicate") {
       // A concurrent attempt for the same spend won the unique index.
-      if ((e as { code?: string }).code === "23505") throw conflictError("a one-time card for this payment is already being made; nothing was charged");
-      throw e;
+      throw conflictError("a one-time card for this payment is already being made; nothing was charged");
     }
     const user = await this.user(p.userId);
     let kyc: { status: string; customerId?: string; kycToken?: string };
     try {
-      kyc = await this.d.lifecycle.kycStatus(user.kyc_reference);
+      kyc = await this.d.lifecycle.kycStatus(user.kycReference!);
     } catch (e) {
       await mark("failed", `KYC lookup failed: ${errText(e)}`.slice(0, 200));
       throw unavailableError("could not look up the cardholder to make a one-time card; nothing was charged");
@@ -692,7 +671,7 @@ export class CardholderInteractor {
     }
     let out: { cardId: string; detailsCaptured: boolean };
     try {
-      out = await this.d.cards.issueOneTime({ customerId: kyc.customerId, kycToken: kyc.kycToken }, amountCents, `ot-${spendId}`, { capture: opts.needDetails });
+      out = await this.d.cardIssuer.issueOneTime({ customerId: kyc.customerId, kycToken: kyc.kycToken }, amountCents, `ot-${spendId}`, { capture: opts.needDetails });
     } catch (e) {
       if (isDefiniteRefusal(e)) {
         const why = e instanceof MidenApiError ? midenMessage(e) : errText(e);
@@ -709,7 +688,7 @@ export class CardholderInteractor {
       throw badGatewayError("the one-time card was made but its details were unavailable; nothing was charged and the card is flagged for review");
     }
     await mark("ready", null, out.cardId);
-    await pool.query("UPDATE app_spend SET charge_card_id = $2 WHERE spend_id = $1", [spendId, out.cardId]);
+    await this.d.spends.setChargeCard(spendId, out.cardId);
     this.log(`one-time card ${out.cardId.slice(0, 8)} made for spend ${spendId}`);
     return out.cardId;
   }
@@ -717,12 +696,7 @@ export class CardholderInteractor {
   // ---------- agents (agent side) ----------
 
   async agentByToken(token: string): Promise<AgentPrincipal | undefined> {
-    const r = await this.d.pool.query(
-      "SELECT a.card_id, a.agent_id, a.name, c.user_id FROM app_agent a JOIN app_card c ON c.card_id = a.card_id WHERE a.token_hash = $1 AND a.revoked_at IS NULL",
-      [hashToken(token)],
-    );
-    const a = r.rows[0];
-    return a ? { cardId: a.card_id, agentId: a.agent_id, name: a.name, userId: a.user_id } : undefined;
+    return this.d.agents.findActiveByTokenHash(hashToken(token));
   }
 
   async agentWallet(p: AgentPrincipal) {
@@ -775,10 +749,9 @@ export class CardholderInteractor {
 
   /** The earlier result for this key, or a 409 if the key was used for a different payment. */
   private async priorSpend(p: AgentPrincipal, r: { amountCents: number; merchant: string; mcc?: string; key: string }): Promise<SpendView | undefined> {
-    const prior = await this.d.pool.query("SELECT * FROM app_spend WHERE card_id = $1 AND agent_id = $2 AND idempotency_key = $3", [p.cardId, p.agentId, r.key]);
-    const s = prior.rows[0];
+    const s = await this.d.spends.findByKey(p.cardId, p.agentId, r.key);
     if (!s) return undefined;
-    if (num(s.amount_cents) !== r.amountCents || s.merchant !== r.merchant || (s.mcc ?? undefined) !== r.mcc) {
+    if (s.amountCents !== r.amountCents || s.merchant !== r.merchant || (s.mcc ?? undefined) !== r.mcc) {
       throw conflictError("that idempotency key was already used for a different payment");
     }
     return spendView(s);
@@ -788,35 +761,15 @@ export class CardholderInteractor {
    * Records the spend, checking the agent's and the card's daily limits under a row lock on the card, so
    * concurrent payments (in any process) cannot both fit. Over a limit, the row is written as declined.
    */
-  private async openSpend(p: AgentPrincipal, r: { amountCents: number; merchant: string; mcc?: string; key: string }, spendId: string, policy: SpendPolicy): Promise<SpendView> {
-    const c = await this.d.pool.connect();
-    try {
-      await c.query("BEGIN");
-      const card = (await c.query("SELECT daily_cents FROM app_card WHERE card_id = $1 FOR UPDATE", [p.cardId])).rows[0];
-      if (!card) throw notFoundError("card not found");
-      const [start, end] = this.today();
-      const cardToday = num((await c.query(
-        "SELECT COALESCE(sum(amount_cents), 0) AS s FROM app_spend WHERE card_id = $1 AND status IN ('approved', 'processing') AND created_at >= $2 AND created_at < $3",
-        [p.cardId, start, end],
-      )).rows[0].s);
-      const agentToday = await this.spentToday(p.cardId, p.agentId, c);
+  private openSpend(p: AgentPrincipal, r: { amountCents: number; merchant: string; mcc?: string; key: string }, spendId: string, policy: SpendPolicy): Promise<OpenSpendResult> {
+    const draft = { spendId, cardId: p.cardId, agentId: p.agentId, idempotencyKey: r.key, amountCents: r.amountCents, merchant: r.merchant, mcc: r.mcc ?? null };
+    return this.d.spends.open(draft, this.today(), (t) => {
       // The agent's own policy first (per payment, merchant category, daily), so its reasons read as before.
-      const verdict = evaluate(policy, { amountCents: r.amountCents, mcc: r.mcc, spentTodayCents: agentToday });
-      const reason = !verdict.ok ? verdict.reason
-        : cardToday + r.amountCents > num(card.daily_cents) ? "card daily limit exceeded (shared by all agents on this card)"
+      const verdict = evaluate(policy, { amountCents: r.amountCents, mcc: r.mcc, spentTodayCents: t.agentSpentCents });
+      return !verdict.ok ? verdict.reason
+        : t.cardSpentCents + r.amountCents > t.cardDailyCents ? "card daily limit exceeded (shared by all agents on this card)"
         : null;
-      const row = await c.query(
-        "INSERT INTO app_spend (spend_id, card_id, agent_id, idempotency_key, amount_cents, merchant, mcc, status, reason) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *",
-        [spendId, p.cardId, p.agentId, r.key, r.amountCents, r.merchant, r.mcc ?? null, reason ? "declined" : "processing", reason],
-      );
-      await c.query("COMMIT");
-      return spendView(row.rows[0]);
-    } catch (e) {
-      await c.query("ROLLBACK").catch(() => undefined);
-      throw e;
-    } finally {
-      c.release();
-    }
+    });
   }
 
   private async doPay(p: AgentPrincipal, r: { amountCents: number; merchant: string; mcc?: string; key: string }, charge?: Charger): Promise<SpendView> {
@@ -835,35 +788,28 @@ export class CardholderInteractor {
   }
 
   private async chargeSpend(p: AgentPrincipal, r: { amountCents: number; merchant: string; mcc?: string; key: string }, policy: SpendPolicy, spendId: string, charge?: Charger): Promise<SpendView> {
-    let opened: SpendView;
-    try {
-      opened = await this.openSpend(p, r, spendId, policy);
-    } catch (e) {
+    const result = await this.openSpend(p, r, spendId, policy);
+    if (result.outcome === "card_not_found") throw notFoundError("card not found");
+    if (result.outcome === "duplicate_key") {
       // Another process inserted the same key first: answer with its result.
-      if ((e as { code?: string }).code === "23505") {
-        const again = await this.priorSpend(p, r);
-        if (again) return again;
-        throw conflictError("a payment with that idempotency key is already in progress");
-      }
-      throw e;
+      const again = await this.priorSpend(p, r);
+      if (again) return again;
+      throw conflictError("a payment with that idempotency key is already in progress");
     }
+    const opened = spendView(result.spend);
     if (opened.status !== "processing") return opened;
     const finish = async (status: SpendView["status"], reason: string | null, extra: { seq?: number; auth?: string } = {}) => {
-      const row = await this.d.pool.query(
-        "UPDATE app_spend SET status = $2, reason = $3, ledger_seq = COALESCE($4, ledger_seq), miden_auth_id = COALESCE($5, miden_auth_id) WHERE spend_id = $1 RETURNING *",
-        [spendId, status, reason, extra.seq ?? null, extra.auth ?? null],
-      );
+      const row = await this.d.spends.finish(spendId, status, reason, extra);
       this.emitSpend(spendId);
-      return spendView(row.rows[0]);
+      return spendView(row!);
     };
     // Daily limits were checked in openSpend (Postgres, shared by every process); this checks the rest and debits.
     const verdict = await this.d.wallets.spend(p.cardId, p.agentId, r.amountCents, spendId, r.mcc, { dailyCheckedByCaller: true });
     if (!verdict.ok) return finish("declined", verdict.reason);
-    const still = await this.d.pool.query("UPDATE app_spend SET ledger_seq = $2 WHERE spend_id = $1 AND status = 'processing'", [spendId, verdict.tx.seq]);
-    if (still.rowCount === 0) {
+    if (!(await this.d.spends.setLedgerSeqIfProcessing(spendId, verdict.tx.seq))) {
       // Another process's reconcile closed it while the debit was slow: undo the debit and never charge the card.
       await this.d.wallets.voidSpend(spendId, verdict.tx);
-      return spendView((await this.d.pool.query("SELECT * FROM app_spend WHERE spend_id = $1", [spendId])).rows[0]);
+      return spendView((await this.d.spends.find(spendId))!);
     }
     if (charge) {
       let out: ChargeOutcome;
@@ -921,42 +867,33 @@ export class CardholderInteractor {
   private async doReconcileSpends(): Promise<void> {
     const before = new Date(this.now().getTime() - RECONCILE_AFTER_MS);
     // Swap spends are settled by SwapInteractor.reconcile (matched on the card by amount and time, not by mid).
-    const rows = (await this.d.pool.query(
-      "SELECT * FROM app_spend WHERE status = 'processing' AND created_at < $1 AND NOT starts_with(idempotency_key, $2) ORDER BY created_at LIMIT 200",
-      [before, SWAP_KEY_PREFIX],
-    )).rows;
+    const rows = await this.d.spends.processingBefore(before, SWAP_KEY_PREFIX, 200);
     const lists = new Map<string, Promise<CardTransaction[]>>();
     for (const s of rows) {
-      if (this.inflight.has(s.spend_id)) continue;
-      await this.reconcileSpend(s, lists).catch((e) => this.log(`reconcile ${s.spend_id}: ${errText(e)}`));
+      if (this.inflight.has(s.spendId)) continue;
+      await this.reconcileSpend(s, lists).catch((e) => this.log(`reconcile ${s.spendId}: ${errText(e)}`));
     }
   }
 
-  private async reconcileSpend(s: Record<string, any>, lists: Map<string, Promise<CardTransaction[]>>): Promise<void> {
-    const spendId = s.spend_id as string;
+  private async reconcileSpend(s: Spend, lists: Map<string, Promise<CardTransaction[]>>): Promise<void> {
+    const spendId = s.spendId;
     const settle = async (status: SpendView["status"], reason: string | null, auth?: string) => {
-      const r = await this.d.pool.query(
-        "UPDATE app_spend SET status = $2, reason = $3, miden_auth_id = COALESCE($4, miden_auth_id) WHERE spend_id = $1 AND status = 'processing'",
-        [spendId, status, reason, auth ?? null],
-      );
-      if (r.rowCount === 1) this.emitSpend(spendId);
-      return r;
+      const moved = await this.d.spends.settleProcessing(spendId, status, reason, auth);
+      if (moved) this.emitSpend(spendId);
+      return moved;
     };
     // Found by key, not ledger_seq: the debit can commit before its seq is saved on the row.
     const tx: LedgerTransaction | undefined = await this.d.ledger.findByKey(`spend:${spendId}`);
     if (!tx) {
       // The card is charged only after the agent is debited, so nothing was charged. Guarded on ledger_seq: if a
       // slow payment in another process debits meanwhile, it sees the row closed and undoes its own debit.
-      await this.d.pool.query(
-        "UPDATE app_spend SET status = 'voided', reason = 'interrupted before payment; nothing was charged' WHERE spend_id = $1 AND status = 'processing' AND ledger_seq IS NULL",
-        [spendId],
-      );
+      await this.d.spends.voidUndebited(spendId, "interrupted before payment; nothing was charged");
       return;
     }
-    if (s.ledger_seq === null) await this.d.pool.query("UPDATE app_spend SET ledger_seq = $2 WHERE spend_id = $1 AND status = 'processing'", [spendId, tx.seq]);
+    if (s.ledgerSeq === null) await this.d.spends.setLedgerSeqIfProcessing(spendId, tx.seq);
     let found: CardTransaction | undefined;
     if (this.d.sandbox) {
-      const onCard = (s.charge_card_id ?? s.card_id) as string;
+      const onCard = s.chargeCardId ?? s.cardId;
       if (!lists.has(onCard)) lists.set(onCard, this.d.lifecycle.transactions(onCard, "Authorization", 100));
       const mid = midFor(spendId);
       found = (await lists.get(onCard)!).find((t) => t.merchantMid === mid);
@@ -973,11 +910,11 @@ export class CardholderInteractor {
       // not charged, so never refund here: keep the money held and flag it for a person (like findLostFunding).
       const note = found
         ? `needs review: the card shows status "${status}"; the money is held`
-        : this.now().getTime() - new Date(s.created_at).getTime() > GIVE_UP_AFTER_MS
+        : this.now().getTime() - s.createdAt.getTime() > GIVE_UP_AFTER_MS
           ? "needs review: the card network has no record of this payment yet; the money is held"
           : null;
       if (note && s.reason !== note) {
-        await this.d.pool.query("UPDATE app_spend SET reason = $2 WHERE spend_id = $1 AND status = 'processing'", [spendId, note]);
+        await this.d.spends.noteProcessing(spendId, note);
         this.log(`reconcile ${spendId}: ${note}`);
       }
     }
@@ -988,22 +925,18 @@ export class CardholderInteractor {
    * undoes it. Only ever moves a row out of processing, once; returns false if it was not processing.
    */
   async resolveSwapSpend(spendId: string, out: { status: "approved"; auth?: string } | { status: "voided"; reason: string }): Promise<boolean> {
-    const s = (await this.d.pool.query("SELECT * FROM app_spend WHERE spend_id = $1", [spendId])).rows[0];
-    if (!s || !String(s.idempotency_key).startsWith(SWAP_KEY_PREFIX)) return false;
+    const s = await this.d.spends.find(spendId);
+    if (!s || !s.idempotencyKey.startsWith(SWAP_KEY_PREFIX)) return false;
     // A voided row is re-voided (the reversal is idempotent), which repairs a crash between closing the row and undoing the debit.
     if (s.status !== "processing" && !(s.status === "voided" && out.status === "voided")) return false;
     if (out.status === "approved") {
-      const r = await this.d.pool.query(
-        "UPDATE app_spend SET status = 'approved', reason = NULL, miden_auth_id = COALESCE($2, miden_auth_id) WHERE spend_id = $1 AND status = 'processing'",
-        [spendId, out.auth ?? null],
-      );
-      if (r.rowCount === 1) this.emitSpend(spendId);
-      return r.rowCount === 1;
+      const moved = await this.d.spends.settleProcessing(spendId, "approved", null, out.auth);
+      if (moved) this.emitSpend(spendId);
+      return moved;
     }
     // Close the row first, then undo the debit: two reconcilers racing cannot both refund.
     if (s.status === "processing") {
-      const r = await this.d.pool.query("UPDATE app_spend SET status = 'voided', reason = $2 WHERE spend_id = $1 AND status = 'processing'", [spendId, out.reason]);
-      if (r.rowCount !== 1) return false;
+      if (!(await this.d.spends.settleProcessing(spendId, "voided", out.reason))) return false;
       this.emitSpend(spendId);
     }
     const tx = await this.d.ledger.findByKey(`spend:${spendId}`);
@@ -1013,7 +946,7 @@ export class CardholderInteractor {
 
   /** Puts a note on a processing spend (e.g. "needs review"), visible to the agent in list_transactions. */
   async noteSpend(spendId: string, reason: string): Promise<void> {
-    await this.d.pool.query("UPDATE app_spend SET reason = $2 WHERE spend_id = $1 AND status = 'processing'", [spendId, reason]);
+    await this.d.spends.noteProcessing(spendId, reason);
   }
 
   // ---------- helpers ----------
@@ -1025,48 +958,40 @@ export class CardholderInteractor {
   }
 
   /** Approved and still-processing spends today: a processing payment's money is held until it settles. */
-  private async spentToday(cardId: string, agentId: string, db: Pick<pg.Pool, "query"> = this.d.pool): Promise<number> {
+  private spentToday(cardId: string, agentId: string): Promise<number> {
     const [start, end] = this.today();
-    const r = await db.query(
-      "SELECT COALESCE(sum(amount_cents), 0) AS s FROM app_spend WHERE card_id = $1 AND agent_id = $2 AND status IN ('approved', 'processing') AND created_at >= $3 AND created_at < $4",
-      [cardId, agentId, start, end],
-    );
-    return num(r.rows[0].s);
+    return this.d.spends.agentSpentBetween(cardId, agentId, start, end);
   }
 
   private async spends(cardId: string, agentId: string, limit: number): Promise<SpendView[]> {
-    const r = await this.d.pool.query("SELECT * FROM app_spend WHERE card_id = $1 AND agent_id = $2 ORDER BY created_at DESC LIMIT $3", [cardId, agentId, limit]);
-    return r.rows.map(spendView);
+    return (await this.d.spends.recentByAgent(cardId, agentId, limit)).map(spendView);
   }
 
   private async user(userId: string) {
-    const r = await this.d.pool.query("SELECT * FROM app_user WHERE id = $1", [userId]);
-    if (!r.rows[0]) throw notFoundError("user not found");
-    return r.rows[0];
+    const u = await this.d.users.findById(userId);
+    if (!u) throw notFoundError("user not found");
+    return u;
   }
 
-  private async cardOf(userId: string) {
-    return (await this.d.pool.query("SELECT * FROM app_card WHERE user_id = $1", [userId])).rows[0];
+  private cardOf(userId: string): Promise<Card | undefined> {
+    return this.d.cards.findByUser(userId);
   }
 
-  private async requireCard(userId: string) {
+  private async requireCard(userId: string): Promise<Card> {
     const card = await this.cardOf(userId);
     if (!card) throw conflictError("no card yet: complete KYC first");
     return card;
   }
 
-  private async requireAgent(cardId: string, agentId: string) {
-    const r = await this.d.pool.query("SELECT * FROM app_agent WHERE card_id = $1 AND agent_id = $2", [cardId, agentId]);
-    if (!r.rows[0]) throw notFoundError("agent not found");
-    return r.rows[0];
+  private async requireAgent(cardId: string, agentId: string): Promise<Agent> {
+    const a = await this.d.agents.find(cardId, agentId);
+    if (!a) throw notFoundError("agent not found");
+    return a;
   }
 
   /** Users with KYC still in review, for the background poller. */
   async pendingKycUsers(): Promise<string[]> {
-    const r = await this.d.pool.query(
-      "SELECT u.id FROM app_user u LEFT JOIN app_card c ON c.user_id = u.id WHERE u.kyc_reference IS NOT NULL AND c.card_id IS NULL AND u.kyc_status <> 'Rejected'",
-    );
-    return r.rows.map((x) => x.id);
+    return this.d.users.pendingKycUserIds();
   }
 }
 
@@ -1077,9 +1002,9 @@ function isDefiniteRefusal(e: unknown): boolean {
 }
 
 /** Owner-chosen agent limits must fit the card's and make sense together; say so instead of silently capping. */
-function checkAgentLimits(p: SpendPolicy, card: { per_txn_cents: string | number; daily_cents: string | number }): void {
-  if (p.perTransactionCents > num(card.per_txn_cents)) throw badRequestError(`per-payment limit can be at most ${usd(num(card.per_txn_cents))}, the card's limit`);
-  if (p.dailyCents > num(card.daily_cents)) throw badRequestError(`daily limit can be at most ${usd(num(card.daily_cents))}, the card's limit`);
+function checkAgentLimits(p: SpendPolicy, card: Pick<Card, "perTxnCents" | "dailyCents">): void {
+  if (p.perTransactionCents > card.perTxnCents) throw badRequestError(`per-payment limit can be at most ${usd(card.perTxnCents)}, the card's limit`);
+  if (p.dailyCents > card.dailyCents) throw badRequestError(`daily limit can be at most ${usd(card.dailyCents)}, the card's limit`);
   if (p.perTransactionCents > p.dailyCents) throw badRequestError("per-payment limit cannot be more than the daily limit");
 }
 
@@ -1092,21 +1017,21 @@ function holdingReason(holdingCents: number, roomCents: number, capCents: number
   return null;
 }
 
-function policyOf(a: { per_txn_cents: string | number; daily_cents: string | number; allowed_mccs: string[] | null }): SpendPolicy {
-  const p: SpendPolicy = { perTransactionCents: num(a.per_txn_cents), dailyCents: num(a.daily_cents) };
-  if (a.allowed_mccs && a.allowed_mccs.length) p.allowedMccs = a.allowed_mccs;
+function policyOf(a: Pick<Agent, "perTxnCents" | "dailyCents" | "allowedMccs">): SpendPolicy {
+  const p: SpendPolicy = { perTransactionCents: a.perTxnCents, dailyCents: a.dailyCents };
+  if (a.allowedMccs && a.allowedMccs.length) p.allowedMccs = a.allowedMccs;
   return p;
 }
 
-function spendView(s: Record<string, unknown>): SpendView {
+function spendView(s: Spend): SpendView {
   return {
-    spendId: s.spend_id as string,
-    amountCents: num(s.amount_cents as string),
-    merchant: s.merchant as string,
-    mcc: (s.mcc as string | null) ?? null,
-    status: s.status as SpendView["status"],
-    reason: (s.reason as string | null) ?? null,
-    createdAt: (s.created_at as Date).toISOString(),
+    spendId: s.spendId,
+    amountCents: s.amountCents,
+    merchant: s.merchant,
+    mcc: s.mcc ?? null,
+    status: s.status,
+    reason: s.reason ?? null,
+    createdAt: s.createdAt.toISOString(),
   };
 }
 

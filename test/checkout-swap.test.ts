@@ -3,10 +3,12 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import pg from "pg";
 import { AgentWallets } from "../src/lib/services/AgentWallets.js";
-import { PgDepositAddresses } from "../src/db/repositories/PgChainRepositories.js";
+import { createDepositAddressRepository } from "../src/db/repositories/createChainRepositories.js";
 import { DEFAULT_TIERS } from "../src/lib/services/tiers.js";
 import { Ledger, accounts } from "../src/lib/services/Ledger.js";
-import { PgLedgerStore } from "../src/db/repositories/PgLedgerStore.js";
+import { createDatabase } from "../src/db/client.js";
+import { migrate } from "../src/db/migrate.js";
+import { createRepositories } from "../src/db/repositories/createRepositories.js";
 import { MidenApiError } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
 import { CardholderInteractor, type CardholderContext } from "../src/lib/interactors/CardholderInteractor.js";
 import { MemoryCardVault, type CardDetails } from "../src/adapters/cardVault/CardVault.js";
@@ -163,8 +165,10 @@ async function setup(cfg: Partial<SwapConfig> = {}, opts: { privacy?: boolean } 
   schemas.push(schema);
   const pool = new pg.Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 6 });
   pools.push(pool);
-  await new PgLedgerStore(pool).migrate();
-  const ledger = new Ledger(undefined, new PgLedgerStore(pool));
+  await migrate(pool);
+  const db = createDatabase(pool);
+  const repos = createRepositories(db);
+  const ledger = new Ledger(undefined, repos.ledger);
   const txns: Record<string, unknown>[] = [];
   const asked: string[] = [];
   const lifecycle = {
@@ -177,11 +181,12 @@ async function setup(cfg: Partial<SwapConfig> = {}, opts: { privacy?: boolean } 
   const vaultRef: { v?: MemoryCardVault } = {};
   const oneTimeCards: string[] = [];
   const app = new CardholderInteractor({
-    pool, ledger, wallets: new AgentWallets(ledger), addresses: new PgDepositAddresses(pool, "base-sepolia"),
+    users: repos.users, cards: repos.cards, agents: repos.agents, spends: repos.spends, fundings: repos.fundings, oneTimeCards: repos.oneTimeCards,
+    ledger, wallets: new AgentWallets(ledger), addresses: createDepositAddressRepository(db, "base-sepolia"),
     deriveAddress: (i: number) => `0x${i.toString(16).padStart(40, "0")}`, tiers: DEFAULT_TIERS, chain: "base-sepolia", sandbox: true, simulatedDeposits: true,
     miden: { request: async () => ({ isSuccessful: true, responseCode: "00", kycStatus: "Initiated" }) },
     lifecycle,
-    cards: {
+    cardIssuer: {
       issue: async (_a: string, policy: unknown) => ({ id: `card-${randomBytes(3).toString("hex")}`, agentId: "x", policy, detailsCaptured: true }),
       // Like the real service: a one-time card's details are sealed into the vault when it is issued.
       issueOneTime: async (_k: unknown, _amount: number, _ref: string, o: { capture: boolean }) => {
@@ -208,7 +213,7 @@ async function setup(cfg: Partial<SwapConfig> = {}, opts: { privacy?: boolean } 
   const filler = new FakeFiller();
   if (opts.privacy) filler.expectPan = ONE_TIME_PAN;
   const swap = new SwapInteractor({
-    pool, app, vault, filler, lifecycle, now: () => new Date(clock),
+    swaps: repos.swaps, app, vault, filler, lifecycle, now: () => new Date(clock),
     config: { enabled: true, maxAmountCents: 1_000, allowedHosts: ["checkout.stripe.com"], ...cfg },
   });
   const balance = () => ledger.balance(accounts.agent(p.cardId, a.agentId));
@@ -469,7 +474,7 @@ test("swap, privacy mode: same-amount payments run side by side, and reconcile r
 test("swap, privacy mode: no one-time card means nothing is typed and nothing is charged", { skip }, async () => {
   const s = await setup({}, { privacy: true });
   // Swap in a card service that cannot make cards.
-  (s.app as any).d.cards = { ...(s.app as any).d.cards, issueOneTime: async () => { throw new MidenApiError("POST", "/api/v2/cards/issue-lite", 400, JSON.stringify({ responseCode: "111", responseMessage: "Maximum Number of Cards Per customer Limit 3 Exceeded" })); } };
+  (s.app as any).d.cardIssuer = { ...(s.app as any).d.cardIssuer, issueOneTime: async () => { throw new MidenApiError("POST", "/api/v2/cards/issue-lite", 400, JSON.stringify({ responseCode: "111", responseMessage: "Maximum Number of Cards Per customer Limit 3 Exceeded" })); } };
   const r = await s.swap.pay(s.p, req());
   assert.equal(r.status, "failed");
   assert.match(r.payment!.reason!, /Limit 3 Exceeded/);

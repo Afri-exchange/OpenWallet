@@ -4,10 +4,12 @@ import { randomBytes } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import pg from "pg";
 import { AgentWallets } from "../src/lib/services/AgentWallets.js";
-import { PgDepositAddresses } from "../src/db/repositories/PgChainRepositories.js";
+import { createDepositAddressRepository } from "../src/db/repositories/createChainRepositories.js";
 import { DEFAULT_TIERS } from "../src/lib/services/tiers.js";
 import { Ledger, accounts } from "../src/lib/services/Ledger.js";
-import { PgLedgerStore } from "../src/db/repositories/PgLedgerStore.js";
+import { createDatabase } from "../src/db/client.js";
+import { migrate } from "../src/db/migrate.js";
+import { createRepositories } from "../src/db/repositories/createRepositories.js";
 import { MidenApiError } from "../src/lib/clients/cardIssuing/miden/MidenClient.js";
 import { CheckoutInteractor } from "../src/lib/interactors/CheckoutInteractor.js";
 import { MAX_SIGN_FAILURES, PayoutInteractor } from "../src/lib/interactors/PayoutInteractor.js";
@@ -55,7 +57,7 @@ function fakeMiden() {
       },
       transactions: async (cardId: string, type?: string) => f.txns.filter((t) => t.cardId === cardId && (!type || t.transactionType === type)),
     },
-    cards: { issue: async (_a: string, policy: unknown) => ({ id: `card-${randomBytes(3).toString("hex")}`, agentId: "x", policy }) },
+    cardIssuer: { issue: async (_a: string, policy: unknown) => ({ id: `card-${randomBytes(3).toString("hex")}`, agentId: "x", policy }) },
     funding: { fund: async () => ({ id: "m1", status: "confirmed" as const }) },
   };
   return { f, deps };
@@ -70,18 +72,21 @@ async function setup() {
   schemas.push(schema);
   const pool = new pg.Pool({ connectionString: databaseUrl, options: `-c search_path=${schema}`, max: 6 });
   pools.push(pool);
-  await new PgLedgerStore(pool).migrate();
-  const ledger = new Ledger(undefined, new PgLedgerStore(pool));
+  await migrate(pool);
+  const db = createDatabase(pool);
+  const repos = createRepositories(db);
+  const ledger = new Ledger(undefined, repos.ledger);
   const { f, deps } = fakeMiden();
   const make = (over: Partial<CardholderContext> = {}) => new CardholderInteractor({
-    pool, ledger, wallets: new AgentWallets(ledger), addresses: new PgDepositAddresses(pool, "base-sepolia"),
+    users: repos.users, cards: repos.cards, agents: repos.agents, spends: repos.spends, fundings: repos.fundings, oneTimeCards: repos.oneTimeCards,
+    ledger, wallets: new AgentWallets(ledger), addresses: createDepositAddressRepository(db, "base-sepolia"),
     deriveAddress: (i: number) => `0x${i.toString(16).padStart(40, "0")}`, tiers: DEFAULT_TIERS, chain: "base-sepolia", sandbox: true, simulatedDeposits: true,
     ...deps, ...over,
   } as unknown as CardholderContext);
   const app = make();
   const OWN = "0x00000000000000000000000000000000000000aa";
   const checkoutFor = (a: CardholderInteractor, now?: () => Date, payoutAddressDelayMs = 0) =>
-    new CheckoutInteractor({ pool, ledger, app: a, publicUrl: "http://127.0.0.1:8787", now, payoutAddressDelayMs, isOwnAddress: async (x) => x === OWN });
+    new CheckoutInteractor({ merchants: repos.merchants, checkouts: repos.checkouts, payouts: repos.payouts, ledger, app: a, publicUrl: "http://127.0.0.1:8787", now, payoutAddressDelayMs, isOwnAddress: async (x) => x === OWN });
   const checkout = checkoutFor(app);
   const { userId } = await app.signup(`u${randomBytes(3).toString("hex")}@example.com`);
   await app.submitKyc(userId, KYC);
@@ -93,7 +98,7 @@ async function setup() {
     return { ...a, p: (await app.agentByToken(a.token))! };
   };
   const merchant = await checkout.createMerchant({ name: "Acme API", email: `m${randomBytes(3).toString("hex")}@example.com`, mcc: "5734" });
-  return { app, make, checkoutFor, checkout, f, pool, ledger, userId, agent, merchant, OWN };
+  return { app, make, checkoutFor, checkout, f, pool, db, repos, ledger, userId, agent, merchant, OWN };
 }
 
 test("checkout: an agent pays the merchant's price once; retries return the same payment", { skip }, async () => {
@@ -308,7 +313,7 @@ test("settlement: a charge approved after its checkout moved on is not credited 
   assert.equal((await s.checkout.pay(y.p, c.checkoutId)).checkout.status, "paid"); // attempt 2
   // x's process wakes up and its attempt-1 charge comes back approved.
   const late = { spendId: "sp_late", amountCents: 700, merchant: "Acme API", mcc: "5734", status: "approved" as const, reason: null, createdAt: new Date().toISOString() };
-  await (s.checkout as unknown as { apply: (c: object, sp: object, m: string) => Promise<unknown> }).apply({ checkout_id: c.checkoutId, merchant_id: mid, attempt: 1, amount_cents: "700" }, late, "Acme API");
+  await (s.checkout as unknown as { apply: (c: object, sp: object, m: string) => Promise<unknown> }).apply({ checkoutId: c.checkoutId, merchantId: mid, attempt: 1, amountCents: 700 }, late, "Acme API");
   await s.checkout.sync();
   assert.equal((await s.checkout.balance(mid)).availableCents, 700, "credited for one charge, not two");
   assert.ok((await s.checkout.getForMerchant(mid, c.checkoutId)).underReview);
@@ -425,7 +430,7 @@ test("payout sender: signs, stores, then broadcasts; settles from the chain; nev
   await s.checkout.pay(p, c.checkoutId);
   await s.checkout.setPayoutAddress(mid, { address: WALLET });
   const rail = fakeRail();
-  const sender = new PayoutInteractor({ pool: s.pool, ledger: s.ledger, checkout: s.checkout, rail });
+  const sender = new PayoutInteractor({ db: s.db, payouts: s.repos.payouts, ledger: s.ledger, checkout: s.checkout, rail });
 
   // Short of USDC in the payout account: nothing signed, it stays requested.
   const a = await s.checkout.requestPayout(mid, { amountCents: 1_000 });
@@ -437,7 +442,7 @@ test("payout sender: signs, stores, then broadcasts; settles from the chain; nev
   // Signed and stored before the broadcast; a lost broadcast is rebroadcast with the same bytes.
   rail.signFails = undefined;
   rail.broadcastFails = true;
-  await Promise.all([sender.tick(), new PayoutInteractor({ pool: s.pool, ledger: s.ledger, checkout: s.checkout, rail }).tick()]); // two processes
+  await Promise.all([sender.tick(), new PayoutInteractor({ db: s.db, payouts: s.repos.payouts, ledger: s.ledger, checkout: s.checkout, rail }).tick()]); // two processes
   assert.equal(rail.signed.length, 1, "one transfer signed");
   assert.deepEqual({ to: rail.signed[0]!.to, amountCents: rail.signed[0]!.amountCents }, { to: WALLET, amountCents: 1_000 });
   let po = (await s.checkout.listPayouts(mid))[0]!;
@@ -560,7 +565,7 @@ test("payout sender: a payout that fails on its own does not block the queue, an
   const rail = fakeRail();
   rail.failTo = BAD;
   rail.isFunded = true;
-  const sender = new PayoutInteractor({ pool: s.pool, ledger: s.ledger, checkout: s.checkout, rail });
+  const sender = new PayoutInteractor({ db: s.db, payouts: s.repos.payouts, ledger: s.ledger, checkout: s.checkout, rail });
   await sender.tick();
   assert.deepEqual(rail.signed.map((x) => x.to), [WALLET], "b goes out past a");
   rail.states.set(rail.signed[0]!.txHash, "confirmed");
@@ -578,7 +583,7 @@ test("payout sender: a requested payout without a ledger reservation is never si
   await s.checkout.setPayoutAddress(mid, { address: WALLET });
   await s.pool.query("INSERT INTO app_payout (payout_id, merchant_id, amount_cents, status, destination, chain) VALUES ('po_noreserve', $1, 100, 'requested', $2, 'base-sepolia')", [mid, WALLET]);
   const rail = fakeRail();
-  await new PayoutInteractor({ pool: s.pool, ledger: s.ledger, checkout: s.checkout, rail }).tick();
+  await new PayoutInteractor({ db: s.db, payouts: s.repos.payouts, ledger: s.ledger, checkout: s.checkout, rail }).tick();
   assert.equal(rail.signed.length, 0);
 });
 
