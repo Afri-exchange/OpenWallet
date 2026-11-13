@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<meta name="description" content="Agent Cards documentation: quickstart, concepts, agent REST API, MCP tools, owner API, payment statuses, idempotency and errors.">
-<title>Docs · Agent Cards</title>
+<meta name="description" content="Spendkit documentation: quickstart, concepts, agent REST API, MCP tools, owner API, payment statuses, idempotency and errors.">
+<title>Docs · Spendkit</title>
 <link rel="stylesheet" href="/assets/site.css">
 <style>
   .docs{display:grid;grid-template-columns:260px minmax(0,1fr);gap:48px;align-items:start;padding-top:32px}
@@ -49,7 +49,7 @@
 <body>
 <a class="skip" href="#content">Skip to content</a>
 <header class="nav"><div class="wrap">
-  <a class="brand" href="/"><span class="logo" aria-hidden="true"></span>Agent Cards</a>
+  <a class="brand" href="/"><span class="logo" aria-hidden="true"></span>Spendkit</a>
   <nav class="nav-links" aria-label="Main"><a class="keep" href="/docs">Docs</a><a href="/docs#developer-demos">Demos</a><a href="/app#developers">Developers</a></nav>
   <span class="spacer"></span>
   <button class="icon-btn" type="button" data-theme-toggle aria-label="Toggle theme"></button>
@@ -58,7 +58,7 @@
 
 <div class="wrap docs">
 <nav id="side" aria-label="Documentation">
-  <div class="products" role="group" aria-label="Product"><a href="/docs" aria-current="page">Agent Cards</a><a href="/docs/checkout">Checkout</a></div>
+  <div class="products" role="group" aria-label="Product"><a href="/docs" aria-current="page">Spendkit</a><a href="/docs/checkout">Checkout</a></div>
   <div class="search"><label class="sr" for="q">Search the docs</label><input id="q" type="search" placeholder="Search docs" autocomplete="off"><kbd>/</kbd></div>
   <ul class="tree">
     <li data-k="overview about"><a href="#intro">Introduction</a></li>
@@ -83,7 +83,7 @@
 </nav>
 
 <article id="content">
-<h1 id="intro">Agent Cards documentation</h1>
+<h1 id="intro">Spendkit documentation</h1>
 <p class="lead">One funded card. A budget for each AI agent. Agents pay over MCP or REST and never see the card number.</p>
 <div class="note warn"><p><b>Sandbox.</b> Test money only, on localhost. Examples use this server's address (<code>&lt;origin&gt;</code>).</p></div>
 <div class="grid g3" style="margin:24px 0">
@@ -117,7 +117,7 @@ curl -s <span class="s">&lt;origin&gt;/api/me/agents/a_1234abcd/fund</span> -H <
     <span class="k">"agent-cards"</span>: {
       <span class="k">"command"</span>: <span class="s">"node"</span>,
       <span class="k">"args"</span>: [<span class="s">"--import"</span>, <span class="s">"tsx"</span>, <span class="s">"src/startMcpStdio.ts"</span>],
-      <span class="k">"cwd"</span>: <span class="s">"/path/to/agent-cards"</span>,
+      <span class="k">"cwd"</span>: <span class="s">"/path/to/spendkit"</span>,
       <span class="k">"env"</span>: { <span class="k">"AGENT_CARDS_URL"</span>: <span class="s">"&lt;origin&gt;"</span>, <span class="k">"AGENT_CARDS_TOKEN"</span>: <span class="s">"ak_…"</span> }
     }
   }
@@ -308,7 +308,7 @@ node --env-file=examples/developer/.env.developer-demo --import tsx <span class=
 </div>
 
 <footer class="foot"><div class="wrap">
-  <div><a class="brand" href="/" style="margin-bottom:8px"><span class="logo" aria-hidden="true"></span>Agent Cards</a><br>Sandbox preview. Test money only.</div>
+  <div><a class="brand" href="/" style="margin-bottom:8px"><span class="logo" aria-hidden="true"></span>Spendkit</a><br>Sandbox preview. Test money only.</div>
   <div><a href="/">Product</a><a href="/docs">Docs</a><a href="/docs/checkout">Checkout docs</a><a href="/app#developers">Developers</a><a href="/app">Dashboard</a></div>
 </div></footer>
 <div id="msg" role="status" aria-live="polite"></div>

@@ -1,4 +1,4 @@
-# Demo guide: Agent Cards (sandbox)
+# Demo guide: Spendkit (sandbox)
 
 Sandbox only. No real money moves.
 
