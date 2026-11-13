@@ -1,4 +1,4 @@
-# agent-cards
+# OpenWallet
 
 Virtual cards for AI agents, funded with stablecoins, built on the [Miden Workspace API](https://docs.miden.co/getting-started) (the card-issuance REST API, not the Miden blockchain).
 
