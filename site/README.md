@@ -1,7 +1,12 @@
 # spendkit.ai landing page
 
-A static page: `index.html`, `styles.css`, `main.js`, `theme.js`. No build step, no dependencies, no fonts or
-images to fetch. It is separate from the dashboard the service serves (`src/presentation/web/`).
+One idea: the page is a till receipt. The left column is the till (press a purchase, change the limits); the
+right column is the receipt it prints, which also carries the rest of the page (how it works, how to connect,
+what is real today).
+
+Static files, no build step, no dependencies, no third-party requests: `index.html`, `styles.css`, `main.js`
+and self-hosted fonts in `fonts/` (see `fonts/README.md` for licences). It is separate from the dashboard the
+service serves (`src/presentation/web/`).
 
 ## Preview
 
@@ -27,7 +32,6 @@ keep scripts and styles in their own files.
 
 ## Editing
 
-- The limits playground in `main.js` mirrors `evaluate()` in `src/lib/services/spendPolicy.ts`. If the rules
-  or their messages change there, change them here too.
-- The feed in the hero is example data, labelled as such on the page.
-- The page says what is and is not real today. Keep that section in step with `docs/production-gaps.md`.
+- The till in `main.js` mirrors `evaluate()` in `src/lib/services/spendPolicy.ts`: the same three checks, in
+  the same order, with the same messages. If they change there, change them here too.
+- The receipt says what is and is not real today. Keep that section in step with `docs/production-gaps.md`.

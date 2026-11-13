@@ -1,5 +1,5 @@
-// Spendkit landing: theme toggle, copy buttons, tabs, the example feed and the limits playground.
-// No dependencies. Everything here is illustrative; nothing talks to a server.
+// Spendkit landing: the till on the left prints onto the receipt on the right.
+// No dependencies and no network calls: the limits logic runs here, in the page.
 (() => {
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -12,28 +12,170 @@
     return n;
   };
 
-  // ---------- theme ----------
-  const root = document.documentElement;
-  const isLight = () => (root.dataset.theme ? root.dataset.theme === "light" : matchMedia("(prefers-color-scheme: light)").matches);
-  $("#theme").addEventListener("click", () => {
-    root.dataset.theme = isLight() ? "dark" : "light";
-    try { localStorage.setItem("sk-theme", root.dataset.theme); } catch { /* not saved; still applied */ }
-  });
-
-  // ---------- copy ----------
-  async function copy(btn, text) {
-    try {
-      await navigator.clipboard.writeText(text);
-      btn.textContent = "copied";
-      btn.classList.add("done");
-    } catch {
-      btn.textContent = "select + copy";
-    }
-    setTimeout(() => { btn.textContent = "copy"; btn.classList.remove("done"); }, 1400);
+  // The same three checks, in the same order, as evaluate() in src/lib/services/spendPolicy.ts.
+  function evaluate(policy, a) {
+    if (a.amountCents > policy.perTransactionCents) return { ok: false, reason: "per-transaction limit exceeded" };
+    if (a.spentTodayCents + a.amountCents > policy.dailyCents) return { ok: false, reason: "daily limit exceeded" };
+    if (policy.allowedMccs && (!a.mcc || !policy.allowedMccs.includes(a.mcc))) return { ok: false, reason: "merchant category not allowed" };
+    return { ok: true };
   }
-  for (const b of $$("[data-copy]")) b.addEventListener("click", () => copy(b, $(b.dataset.copy).textContent.trim()));
 
-  // ---------- tabs ----------
+  const CATS = [
+    { mcc: "5734", name: "software" },
+    { mcc: "7372", name: "cloud" },
+    { mcc: "5812", name: "food" },
+    { mcc: "4511", name: "airlines" },
+    { mcc: "7995", name: "gambling" },
+  ];
+  const BUYS = [
+    { amountCents: 1250, merchant: "Example API", mcc: "5734" },
+    { amountCents: 3800, merchant: "GPU hour", mcc: "7372" },
+    { amountCents: 900, merchant: "Dataset store", mcc: "5734" },
+    { amountCents: 1800, merchant: "Lunch order", mcc: "5812" },
+    { amountCents: 64000, merchant: "Flight", mcc: "4511" },
+    { amountCents: 2000, merchant: "Casino", mcc: "7995" },
+  ];
+  const DIALS = { perTx: { step: 500, min: 500, max: 10000 }, daily: { step: 1000, min: 1000, max: 30000 } };
+  const catName = (mcc) => CATS.find((c) => c.mcc === mcc)?.name ?? mcc;
+
+  const state = { perTx: 2000, daily: 5000, allowed: new Set(["5734", "7372"]), spent: 0, ok: 0, no: 0, order: 0, last: null };
+  const policy = () => ({ perTransactionCents: state.perTx, dailyCents: state.daily, allowedMccs: CATS.map((c) => c.mcc).filter((m) => state.allowed.has(m)) });
+
+  // ---------- receipt header: live date, time and number ----------
+  const pad = (n) => String(n).padStart(2, "0");
+  function clock() {
+    const d = new Date();
+    $("#r-date").textContent = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    $("#r-time").textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+  clock();
+  setInterval(clock, 1000);
+  $("#r-no").textContent = `no. ${String(Math.floor(Math.random() * 90000) + 10000)}`;
+
+  // ---------- paint policy and totals ----------
+  function paint() {
+    $("#perTxOut").textContent = `$${state.perTx / 100}`;
+    $("#dailyOut").textContent = `$${state.daily / 100}`;
+    $("#p-perTx").textContent = usd(state.perTx);
+    $("#p-daily").textContent = usd(state.daily);
+    const names = CATS.filter((c) => state.allowed.has(c.mcc)).map((c) => `${c.name} ${c.mcc}`);
+    $("#p-cats").textContent = names.length ? names.join(", ") : "none";
+    for (const b of $$("#cats button")) b.setAttribute("aria-pressed", String(state.allowed.has(b.dataset.mcc)));
+    $("#t-spent").textContent = usd(state.spent);
+    $("#t-left").textContent = usd(Math.max(0, state.daily - state.spent));
+    $("#t-ok").textContent = String(state.ok);
+    $("#t-no").textContent = String(state.no);
+    const bar = $("#t-bar");
+    bar.style.width = `${Math.min(100, (state.spent / state.daily) * 100)}%`;
+    bar.classList.toggle("full", state.spent >= state.daily);
+  }
+
+  // ---------- printing ----------
+  const items = $("#items"), wait = $("#wait");
+  function printLine(li, fromUser) {
+    items.append(li);
+    while (items.children.length > 7) items.firstElementChild.remove();
+    wait.hidden = true;
+    // On a phone the receipt is below the till: bring the new line into view.
+    if (fromUser && !reduced && matchMedia("(max-width: 1000px)").matches) li.scrollIntoView({ behavior: "smooth", block: "center" });
+    else if (fromUser) li.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "nearest" });
+  }
+  function row(left, right, cls) {
+    const r = el("div", "row");
+    r.append(el("span", "", left), el("i"), el("span", cls, right));
+    return r;
+  }
+  function ring(buy, fromUser) {
+    const key = `order-${++state.order}`;
+    const r = evaluate(policy(), { amountCents: buy.amountCents, mcc: buy.mcc, spentTodayCents: state.spent });
+    if (r.ok) { state.spent += buy.amountCents; state.ok++; } else state.no++;
+    state.last = { buy, key, r };
+    const li = el("li", r.ok ? "ok" : "no");
+    li.append(
+      row(buy.merchant, usd(buy.amountCents), "amt"),
+      el("p", "sub", `mcc ${buy.mcc} ${catName(buy.mcc)} · ${key}`),
+      el("p", "res", r.ok ? "approved" : r.reason),
+      el("span", r.ok ? "stamp ok" : "stamp", r.ok ? "PAID" : "DECLINED"),
+    );
+    printLine(li, fromUser);
+    paint();
+  }
+  function retry(fromUser) {
+    if (!state.last) return;
+    const { buy, key, r } = state.last;
+    const li = el("li", "re");
+    li.append(
+      row(`retry ${buy.merchant}`, usd(buy.amountCents), "amt"),
+      el("p", "sub", `same key: ${key}`),
+      el("p", "res", r.ok ? "first result returned · not charged again" : `first result returned · ${r.reason}`),
+    );
+    printLine(li, fromUser);
+  }
+
+  // ---------- the till ----------
+  const hint = $("#hint");
+  let touched = false;
+  const touch = () => { touched = true; hint.classList.add("gone"); };
+
+  for (const buy of BUYS) {
+    const b = el("button", "key");
+    b.type = "button";
+    b.append(el("b", "", usd(buy.amountCents)), el("i", "", `${buy.merchant} · ${catName(buy.mcc)}`));
+    b.addEventListener("click", () => { touch(); ring(buy, true); });
+    buy.el = b;
+    $("#keys").append(b);
+  }
+  $("#retry").addEventListener("click", () => { touch(); retry(true); });
+  $("#newDay").addEventListener("click", () => {
+    touch();
+    Object.assign(state, { spent: 0, ok: 0, no: 0, last: null });
+    items.replaceChildren();
+    wait.hidden = false;
+    paint();
+  });
+  for (const s of $$(".step")) {
+    s.addEventListener("click", () => {
+      touch();
+      const d = DIALS[s.dataset.dial];
+      state[s.dataset.dial] = Math.min(d.max, Math.max(d.min, state[s.dataset.dial] + Number(s.dataset.d) * d.step));
+      paint();
+    });
+  }
+  for (const c of CATS) {
+    const b = el("button", "", c.name);
+    b.type = "button";
+    b.dataset.mcc = c.mcc;
+    b.addEventListener("click", () => {
+      touch();
+      state.allowed.has(c.mcc) ? state.allowed.delete(c.mcc) : state.allowed.add(c.mcc);
+      paint();
+    });
+    $("#cats").append(b);
+  }
+  paint();
+
+  // ---------- a short demo so the receipt is alive before anyone touches it ----------
+  const DEMO = [0, 1, 2]; // Example API (paid), GPU hour (over the per-payment cap), Dataset store (paid)
+  if (reduced) {
+    for (const i of DEMO) ring(BUYS[i], false);
+  } else {
+    DEMO.forEach((i, n) => setTimeout(() => {
+      if (touched) return;
+      const k = BUYS[i].el;
+      k.classList.add("down");
+      setTimeout(() => k.classList.remove("down"), 160);
+      ring(BUYS[i], false);
+    }, 1100 + n * 1300));
+  }
+
+  // ---------- keep the left column in view while the receipt scrolls ----------
+  const pitch = $(".pitch");
+  const stick = () => pitch.style.setProperty("--pitch-top", `${Math.min(0, innerHeight - pitch.offsetHeight)}px`);
+  stick();
+  addEventListener("resize", stick);
+  document.fonts?.ready.then(stick);
+
+  // ---------- code tabs + copy ----------
   const tabs = $$('[role="tab"]');
   function select(tab, focus) {
     for (const t of tabs) {
@@ -51,149 +193,16 @@
       if (d) { e.preventDefault(); select(tabs[(i + d + tabs.length) % tabs.length], true); }
     });
   });
-  $("#copyTab").addEventListener("click", (e) => {
-    const panel = $$('[role="tabpanel"]').find((p) => !p.hidden);
-    // Copy the command only: drop comment lines and the example response.
-    const lines = panel.textContent.split("\n").filter((l) => !l.trimStart().startsWith("#") && l.trim());
-    copy(e.currentTarget, lines.join("\n"));
-  });
-
-  // ---------- example feed ----------
-  const FEED = [
-    { k: "ok", who: "research-bot", to: "Example API", amt: 1250, why: "approved" },
-    { k: "no", who: "travel-agent", to: "Airline", amt: 64000, why: "declined · per-transaction limit exceeded" },
-    { k: "ok", who: "design-bot", to: "Font foundry", amt: 1500, why: "approved" },
-    { k: "info", who: "research-bot", to: "retry order-1", why: "same result returned · no double charge" },
-    { k: "no", who: "scraper-7", to: "Casino", amt: 2000, why: "declined · merchant category not allowed" },
-    { k: "ok", who: "support-bot", to: "Checkout cs_9f2…", amt: 1299, why: "paid" },
-    { k: "no", who: "design-bot", to: "Stock photos", amt: 4500, why: "declined · daily limit exceeded" },
-    { k: "info", who: "ops-agent", to: "revoked by owner", why: "token stops working at once" },
-    { k: "ok", who: "research-bot", to: "Dataset store", amt: 800, why: "approved" },
-  ];
-  const MARK = { ok: "✓", no: "✗", info: "↺" };
-  const feed = $("#feed"), okN = $("#feed-ok"), noN = $("#feed-no");
-  let fi = 0, ok = 0, no = 0;
-  function pushFeed() {
-    const f = FEED[fi++ % FEED.length];
-    const li = el("li", f.k);
-    li.append(el("span", "mark", MARK[f.k]));
-    const who = el("span", "who", f.who);
-    who.append(el("span", "", ` → ${f.to}`));
-    li.append(who, el("span", "amt", f.amt ? usd(f.amt) : ""), el("span", "why", f.why));
-    feed.append(li);
-    while (feed.children.length > 7) feed.firstElementChild.remove();
-    if (f.k === "ok") okN.textContent = String(++ok);
-    if (f.k === "no") noN.textContent = String(++no);
-  }
-  if (reduced) {
-    for (let i = 0; i < 6; i++) pushFeed();
-  } else {
-    for (let i = 0; i < 3; i++) pushFeed();
-    let timer;
-    const start = () => { timer ??= setInterval(pushFeed, 1900); };
-    const stop = () => { clearInterval(timer); timer = undefined; };
-    // Only animate while the terminal is on screen and the tab is visible.
-    new IntersectionObserver(([e]) => (e.isIntersecting && !document.hidden ? start() : stop())).observe(feed);
-    document.addEventListener("visibilitychange", () => (document.hidden ? stop() : start()));
-  }
-
-  // ---------- limits playground ----------
-  // The same three checks, in the same order, as evaluate() in src/lib/services/spendPolicy.ts.
-  function evaluate(policy, a) {
-    if (a.amountCents > policy.perTransactionCents) return { ok: false, reason: "per-transaction limit exceeded" };
-    if (a.spentTodayCents + a.amountCents > policy.dailyCents) return { ok: false, reason: "daily limit exceeded" };
-    if (policy.allowedMccs && (!a.mcc || !policy.allowedMccs.includes(a.mcc))) return { ok: false, reason: "merchant category not allowed" };
-    return { ok: true };
-  }
-
-  const CATS = [
-    { mcc: "5734", name: "software" },
-    { mcc: "7372", name: "cloud" },
-    { mcc: "5812", name: "food" },
-    { mcc: "4511", name: "airlines" },
-    { mcc: "7995", name: "gambling" },
-  ];
-  const TRIES = [
-    { amountCents: 1250, merchant: "Example API", mcc: "5734" },
-    { amountCents: 3800, merchant: "GPU hour", mcc: "7372" },
-    { amountCents: 1800, merchant: "Lunch order", mcc: "5812" },
-    { amountCents: 64000, merchant: "Flight", mcc: "4511" },
-    { amountCents: 2000, merchant: "Casino", mcc: "7995" },
-    { amountCents: 900, merchant: "Dataset store", mcc: "5734" },
-  ];
-  const catName = (mcc) => CATS.find((c) => c.mcc === mcc)?.name ?? mcc;
-
-  const state = { perTx: 2000, daily: 5000, any: false, allowed: new Set(["5734", "7372"]), spent: 0 };
-  const policy = () => ({
-    perTransactionCents: state.perTx,
-    dailyCents: state.daily,
-    ...(state.any ? {} : { allowedMccs: CATS.map((c) => c.mcc).filter((m) => state.allowed.has(m)) }),
-  });
-
-  const perTx = $("#perTx"), daily = $("#daily"), chips = $("#chips"), log = $("#log");
-  const fill = (r) => r.style.setProperty("--fill", `${((r.value - r.min) / (r.max - r.min)) * 100}%`);
-
-  function paint() {
-    $("#perTxOut").textContent = `$${state.perTx / 100}`;
-    $("#dailyOut").textContent = `$${state.daily / 100}`;
-    fill(perTx); fill(daily);
-    for (const b of $$("button", chips)) {
-      b.setAttribute("aria-pressed", String(b.dataset.mcc === "any" ? state.any : !state.any && state.allowed.has(b.dataset.mcc)));
+  $("#copy").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    const text = $$('[role="tabpanel"]').find((p) => !p.hidden).textContent.trim();
+    try {
+      await navigator.clipboard.writeText(text);
+      btn.textContent = "copied";
+      btn.classList.add("done");
+    } catch {
+      btn.textContent = "select it";
     }
-    const p = policy();
-    $("#policyJson").textContent =
-      `{\n  "perTransactionCents": ${p.perTransactionCents},\n  "dailyCents": ${p.dailyCents}` +
-      (p.allowedMccs ? `,\n  "allowedMccs": ${JSON.stringify(p.allowedMccs).replaceAll(",", ", ")}` : "") + `\n}`;
-    const pct = Math.min(100, (state.spent / state.daily) * 100);
-    const bar = $("#meterBar");
-    bar.style.width = `${pct}%`;
-    bar.classList.toggle("full", state.spent >= state.daily);
-    $("#spent").textContent = usd(state.spent);
-    $("#cap").textContent = usd(state.daily);
-    $("#left").textContent = `${usd(Math.max(0, state.daily - state.spent))} left`;
-  }
-
-  for (const c of [{ mcc: "any", name: "any" }, ...CATS]) {
-    const b = el("button", "", c.mcc === "any" ? "any" : `${c.name} ${c.mcc}`);
-    b.type = "button";
-    b.dataset.mcc = c.mcc;
-    b.addEventListener("click", () => {
-      if (c.mcc === "any") state.any = !state.any;
-      else {
-        state.any = false;
-        state.allowed.has(c.mcc) ? state.allowed.delete(c.mcc) : state.allowed.add(c.mcc);
-      }
-      paint();
-    });
-    chips.append(b);
-  }
-  perTx.addEventListener("input", () => { state.perTx = Number(perTx.value) * 100; paint(); });
-  daily.addEventListener("input", () => { state.daily = Number(daily.value) * 100; paint(); });
-
-  for (const t of TRIES) {
-    const b = el("button");
-    b.type = "button";
-    const amt = el("b", "", usd(t.amountCents));
-    amt.append(el("i", "", catName(t.mcc)));
-    b.append(amt, el("span", "", t.merchant));
-    b.addEventListener("click", () => {
-      const r = evaluate(policy(), { amountCents: t.amountCents, mcc: t.mcc, spentTodayCents: state.spent });
-      if (r.ok) state.spent += t.amountCents;
-      $(".empty", log)?.remove();
-      const li = el("li", r.ok ? "ok" : "no");
-      const body = el("span", "", `${usd(t.amountCents)} ${t.merchant} `);
-      body.append(el("span", "why", r.ok ? "approved" : `declined · ${r.reason}`));
-      li.append(el("span", "mark", r.ok ? "✓" : "✗"), body);
-      log.prepend(li);
-      while (log.children.length > 5) log.lastElementChild.remove();
-      paint();
-    });
-    $("#tries").append(b);
-  }
-  $("#newDay").addEventListener("click", () => {
-    state.spent = 0;
-    log.replaceChildren(el("li", "empty", "A new day: the daily total is back to zero."));
-    paint();
+    setTimeout(() => { btn.textContent = "copy"; btn.classList.remove("done"); }, 1400);
   });
-  paint();
 })();
