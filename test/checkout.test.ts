@@ -132,7 +132,7 @@ test("checkout: an agent pays the merchant's price once; retries return the same
   await assert.rejects(s.checkout.cancel(s.merchant.merchantId, c.checkoutId), /paid and cannot be canceled/);
 });
 
-test("checkout: an agent cannot pre-spend 1 cent under the checkout's key to mark it paid (Lin's finding)", { skip }, async () => {
+test("checkout: an agent cannot pre-spend 1 cent under the checkout's key to mark it paid", { skip }, async () => {
   const s = await setup();
   const { p } = await s.agent();
   const c = await s.checkout.create(s.merchant.merchantId, { amountCents: 1_000, description: "the real price" });
@@ -494,7 +494,7 @@ test("payout sender: signs, stores, then broadcasts; settles from the chain; nev
   await assert.rejects(s.checkout.settlePayout(e.payoutId, { sent: false, failure: "ops" }, { afterReview: true }), /not under review/);
 });
 
-test("payout: ops and the sender cannot both settle one payout (Lin's race)", { skip }, async () => {
+test("payout: ops and the sender cannot both settle one payout", { skip }, async () => {
   const s = await setup();
   const { p } = await s.agent();
   const mid = s.merchant.merchantId;

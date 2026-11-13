@@ -3,7 +3,7 @@ import type { AgentPrincipal } from "../../lib/interactors/CardholderInteractor.
 
 /**
  * A request as controllers see it. Auth middleware fills the caller fields; controllers read the caller only
- * from here, never from the body or query (the Afriex `req.headers.callerId` rule).
+ * from here, never from the body or query.
  */
 export interface AppRequest extends IncomingMessage {
   /** The path without the query, relative to the router it reached (a mounted router sees its own sub-path). */

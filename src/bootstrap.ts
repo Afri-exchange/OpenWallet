@@ -1,4 +1,4 @@
-// Composition root, part 1 (the Afriex `bootstrap.ts`): reads the environment once and builds every client,
+// Composition root, part 1: reads the environment once and builds every client,
 // repository and adapter into AppParams. Nothing below this file reads process.env.
 import pg from "pg";
 import { SealedCardVault, vaultKeyFromEnv } from "./adapters/cardVault/CardVault.js";

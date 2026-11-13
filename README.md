@@ -71,7 +71,7 @@ Request signing is documented in [docs/miden-api.md](docs/miden-api.md). Smoke c
 
 ## Layout
 
-The code follows the Afriex server's layers: `routes/ -> controllers/ -> lib/interactors/ -> lib/services/ / adapters/ -> db/repositories/, lib/clients/`. Details in [docs/architecture.md](docs/architecture.md#51-source-layout).
+The code is layered: `routes/ -> controllers/ -> lib/interactors/ -> lib/services/ / adapters/ -> db/repositories/, lib/clients/`. Details in [docs/architecture.md](docs/architecture.md#51-source-layout).
 
 | Path | What it is |
 | --- | --- |
@@ -88,7 +88,7 @@ The code follows the Afriex server's layers: `routes/ -> controllers/ -> lib/int
 
 ## Dev
 
-Node 20+ and pnpm.
+Node 20+ and pnpm. `docker compose up -d` starts a local Postgres (see `docker-compose.yml`); the Postgres test suites skip without `DATABASE_URL`.
 
 ```
 pnpm install
@@ -106,3 +106,9 @@ pnpm build
 | [docs/ops.md](docs/ops.md) | Runbooks: checkout or payout held for review |
 | [docs/checkout-payouts.md](docs/checkout-payouts.md) | Checkout, settlement, payouts, what blocks mainnet |
 | [docs/production-gaps.md](docs/production-gaps.md) | Not production-ready items and the open-items list |
+
+## Contributing, security and licence
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) and the [code of conduct](CODE_OF_CONDUCT.md).
+- Report vulnerabilities privately: [SECURITY.md](SECURITY.md).
+- Licensed under the [Apache License 2.0](LICENSE).

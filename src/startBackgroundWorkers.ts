@@ -1,4 +1,4 @@
-// Background work (the Afriex `startQueueWorkers.ts` role): chain watchers, and a 5-second tick that finishes
+// Background work: chain watchers, and a 5-second tick that finishes
 // KYC -> card, moves credited deposits onto cards, reconciles spends, delivers developer webhooks, reconciles
 // hosted-checkout swaps and missed Circle deposits, syncs checkouts and sends payouts.
 import { BaseUsdcWatcher } from "./adapters/deposits/BaseUsdcWatcher.js";

@@ -154,7 +154,7 @@ export function toBillingAddress(b: MidenBillingDetails | undefined): BillingAdd
 /**
  * GET api/v1/cards/details/{cardId}/full-pan: the recovery path when capture at issue failed.
  * Prefers the plain cardNumber/securityCode fields; falls back to decrypting secureCardDetails.
- * Does not exist on every program (the boss's brief: "we may only get the card number once"), so a failure is expected.
+ * Does not exist on every program (we may only get the card number once), so a failure is expected.
  */
 export async function fetchFullCardDetails(miden: MidenClient, cardId: string, keys: DetailKeys): Promise<{ details: CardDetails; scheme: string }> {
   const res = await miden.request<FullPanResponse>("GET", `/api/v1/cards/details/${encodeURIComponent(cardId)}/full-pan`);

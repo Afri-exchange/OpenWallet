@@ -95,7 +95,7 @@ Note what this does and does not mean: the *stablecoin* is credited in our ledge
 
 - Watch the log for `chain watcher: <error>` (deduplicated) and `dust …`.
 - Lag: compare `chain_cursor.block` to the chain head; healthy lag is about `confirmations` blocks plus one poll interval.
-- To test without chain access: `POST /api/me/simulate-chain-deposit` with `sim_<your deposit address>_USDC_<dollars>` credits by address (modelled on the Utila `sim_` transaction ids in afriex-server), and `POST /api/me/simulate-deposit` credits through the same `ledger.confirmDeposit` with chain label `sandbox-sim`; the overview marks those `simulated: true`. For a real one, send Circle test USDC on Base Sepolia to the address on the dashboard and expect the credit roughly 10 to 20 s later (5 confirmations at about 2 s per block, plus the poll interval; an estimate, not measured).
+- To test without chain access: `POST /api/me/simulate-chain-deposit` with `sim_<your deposit address>_USDC_<dollars>` credits by address, and `POST /api/me/simulate-deposit` credits through the same `ledger.confirmDeposit` with chain label `sandbox-sim`; the overview marks those `simulated: true`. For a real one, send Circle test USDC on Base Sepolia to the address on the dashboard and expect the credit roughly 10 to 20 s later (5 confirmations at about 2 s per block, plus the poll interval; an estimate, not measured).
 
 ## OPEN items (as of today)
 

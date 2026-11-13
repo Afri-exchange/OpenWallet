@@ -21,7 +21,7 @@ export interface AgentCardsApp {
   log?: (msg: string) => void;
 }
 
-/** Builds the interactors from what bootstrap made (the Afriex `createApp(appParams)`). */
+/** Builds the interactors from what bootstrap made. */
 export function createApp(p: AppParams): AgentCardsApp & Required<Pick<AgentCardsApp, "checkouts" | "developers" | "payouts">> {
   // Developers are told about cardholder events, and the developer interactor needs the cardholder one:
   // tie the knot with a late binding.

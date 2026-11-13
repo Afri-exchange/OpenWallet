@@ -2,6 +2,7 @@
   "name": "agent-cards",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "description": "Virtual cards for AI agents, funded with stablecoins, on the Miden Workspace API",
   "type": "module",
   "engines": {
