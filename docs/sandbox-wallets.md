@@ -48,7 +48,7 @@ Funds under $1 wait for more deposits; funds beyond the tier's lifetime cap (qui
 ## What is deliberately missing (do not demo these as done)
 
 - **No sweeping.** Nothing moves USDC from user deposit addresses to a treasury address. Test USDC just sits there.
-- **No production custody.** A mnemonic in a file on a laptop is acceptable for testnet only. Production needs an HSM/KMS or a custody provider, key rotation, and an access policy. Lin should review this before it is used for anything real; they own secrets handling.
+- **No production custody.** A mnemonic in a file on a laptop is acceptable for testnet only. Production needs an HSM/KMS or a custody provider, key rotation, and an access policy. Get a security review before it is used for anything real.
 - **No real mainnet flow.** The service refuses non-sandbox Miden URLs; the watcher has a mainnet USDC constant but nothing in `main.ts` enables it.
 - **No withdrawals.** Users cannot send USDC out.
 - **Address gap/limit handling:** every card gets exactly one address; there is no address reuse policy, expiry or per-user rotation.

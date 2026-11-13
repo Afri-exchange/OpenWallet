@@ -109,7 +109,7 @@ Public, unauthenticated: the landing page, `/healthz`, the checkout page `/pay/c
 
 ## 4. Design decisions
 
-These are the choices that shape everything else. Most were made by the boss; the date is given where one was recorded.
+These are the choices that shape everything else. The date is given where one was recorded.
 
 | Decision | Why |
 | --- | --- |
@@ -128,7 +128,7 @@ These are the choices that shape everything else. Most were made by the boss; th
 
 ### 5.1 Source layout
 
-The service follows the Afriex server's layering (`afriex-server/packages/server/src`):
+The service is layered as follows:
 
 ```
 routes/ -> controllers/ -> lib/interactors/ -> lib/services/ -> db/repositories/
@@ -156,7 +156,7 @@ Wired at the top by `bootstrap.ts` (env -> `AppParams`) and `createApp.ts` (`App
 | `src/adapters/` | Our side of each integration: `virtualCards/` (`CardService`, `CardLifecycle`), `funding/` (`MidenWalletFunding`), `deposits/` (`BaseUsdcWatcher`, `CircleDeposits` webhook processor, `simDeposit`), `payouts/` (`UsdcPayoutRail`), `checkoutFillers/` (Stripe, Shopify, Lemon Squeezy, Paddle, with local fixtures), `cardVault/` (`SealedCardVault`: seals in-process, stores through `CardVaultRepository`), `wallet/` (`HdDepositWallet`), `onboarding/` (Card KYC) |
 | `src/db/schema/` | The Drizzle schema: every table, key, index and CHECK as TypeScript, one file per area |
 | `src/db/client.ts` | `createDatabase(pool)` (the Drizzle handle), `Executor`/`Transaction` types, Postgres error helpers |
-| `src/db/repositories/` | One `createXRepository(db)` factory per aggregate (the Afriex pattern), gathered by `createRepositories(db)`; plus `createLedgerStore`, `createChainRepositories` (cursors, deposit addresses) and `MemoryLedgerStore` for unit tests |
+| `src/db/repositories/` | One `createXRepository(db)` factory per aggregate, gathered by `createRepositories(db)`; plus `createLedgerStore`, `createChainRepositories` (cursors, deposit addresses) and `MemoryLedgerStore` for unit tests |
 | `src/db/migrate.ts`, `src/db/migrations/` | Reviewed SQL migrations, applied in order at boot under an advisory lock |
 | `src/db/locks.ts` | Advisory lock keys and helpers |
 | `src/domain/` | `interfaces/` (`FundingSource`), `repositories/` (one interface per repository), `types/` (`AppParams`, `AppRequest`, `Entities`: stored records inferred from the schema) |

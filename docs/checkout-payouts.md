@@ -16,7 +16,7 @@ The card is charged through Miden's simulator under the merchant's name.
 
 ## Settlement
 
-Decision (boss, 2026-10-19): we are merchant of record, so card details reach neither agents nor merchants.
+Decision (2026-10-19): we are merchant of record, so card details reach neither agents nor merchants.
 
 - A checkout that moves to `paid` credits `merchant:<id>` (`external:merchant → merchant:<id>`, key `checkout-settle:<checkout id>`), at most once. A crash before the credit is healed by `sync()` via `app_checkout.settled_seq`.
 - A charge approved after its checkout moved on is not credited; it goes to review ([ops](ops.md)).
@@ -26,7 +26,7 @@ Decision (boss, 2026-10-19): we are merchant of record, so card details reach ne
 
 ## Payouts
 
-Rail: **USDC on Base Sepolia, testnet only** (boss, 2026-10-19; bank transfers later). `UsdcPayoutRail` refuses mainnet.
+Rail: **USDC on Base Sepolia, testnet only** (decided 2026-10-19; bank transfers later). `UsdcPayoutRail` refuses mainnet.
 
 - The merchant sets an address with `POST /merchant/v1/payout-address` (never one of our deposit addresses or the payout account). A new address can be paid only after `PAYOUT_ADDRESS_DELAY_S` (10 min in the sandbox, 24 h default in code). Each payout records the address it was requested to, so a stolen key cannot redirect money at once.
 - A payout is reserved (`merchant → payout_pending`, key `payout-reserve:<id>`) before anything is sent. It is completed or released only on the rail's definite answer (`CheckoutInteractor.settlePayout`). A missing answer never releases. The rail sends only payouts whose reservation exists.
@@ -44,7 +44,7 @@ Testnet USDC has no value, so these are accepted in the sandbox. Each blocks pro
 - Email re-authentication for a payout-address change, plus a notification to the merchant with a way to cancel pending payouts during the delay.
 - Re-authentication or a notification for `POST /merchant/v1/key` (a stolen `mk_` key can rotate the real merchant out).
 - Fee bumping for a transfer stuck on low gas (`maxFeePerGas` is 3× base fee plus tip). A bump must replace the transfer at the same nonce, stored and rebroadcast the same way, never send a new one.
-- A settlement hold, built on Miden's capture webhook, not a timer (Lin's review, 2026-10-19). Today a merchant is credited on card authorization and can request a payout at once, but an authorization can be reversed or charged back and no money reaches us yet. Credit `merchant_unsettled:<id>` first, move it to `merchant:<id>` on capture or after a hold window, and let payouts draw only on `merchant:<id>`.
+- A settlement hold, built on Miden's capture webhook, not a timer (review, 2026-10-19). Today a merchant is credited on card authorization and can request a payout at once, but an authorization can be reversed or charged back and no money reaches us yet. Credit `merchant_unsettled:<id>` first, move it to `merchant:<id>` on capture or after a hold window, and let payouts draw only on `merchant:<id>`.
 - Merchant KYB before the first payout. Signup is open, so a stolen agent token plus a self-made merchant could pay itself out.
 - A refund API. The agent's credit must hang off the same `checkout-refund:<id>` key so the two cannot drift.
 - MCC and merchant names are self-declared, so an agent's MCC allowlist is only as good as the merchant's word. The MCC must come from the acquirer or network. Merchant signup is unverified.
