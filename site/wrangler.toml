@@ -1,0 +1,4 @@
+# Cloudflare Pages config for the landing site. Static files, no build step.
+name = "spendkit-site"
+pages_build_output_dir = "."
+compatibility_date = "2026-11-01"

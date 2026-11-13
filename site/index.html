@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Spendkit · Give your agents a budget, not your card</title>
+<meta name="description" content="Open-source wallets and virtual cards for AI agents. Fund with USDC, set a budget and limits per agent, and let agents pay over MCP or REST. Sandbox preview.">
+<meta name="theme-color" content="#0b0c0e">
+<meta property="og:title" content="Spendkit · Give your agents a budget, not your card">
+<meta property="og:description" content="Open-source wallets and virtual cards for AI agents. Budgets and limits per agent, payments over MCP or REST.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://spendkit.ai/">
+<link rel="canonical" href="https://spendkit.ai/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/styles.css">
+<script src="/theme.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="/" aria-label="Spendkit home">spendkit<span class="cursor" aria-hidden="true"></span></a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#how">how it works</a>
+      <a href="#limits">limits</a>
+      <a href="#connect">connect</a>
+      <a href="https://github.com/spendkit/spendkit/blob/main/docs/getting-started.md">docs</a>
+    </nav>
+    <span class="spacer"></span>
+    <a class="btn ghost sm" href="https://github.com/spendkit/spendkit">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 .2a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.93-.89-1.17-.89-1.17-.73-.5.05-.49.05-.49.8.06 1.23.83 1.23.83.72 1.22 1.88.87 2.33.66.07-.52.28-.87.5-1.07-1.77-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 8 .2Z"/></svg>
+      GitHub
+    </a>
+    <button class="icon-btn" id="theme" type="button" aria-label="Switch theme">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path class="sun" d="M12 4V2m0 20v-2m8-8h2M2 12h2m13.66-5.66 1.41-1.41M4.93 19.07l1.41-1.41m0-11.32L4.93 4.93m14.14 14.14-1.41-1.41M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"/><path class="moon" d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></svg>
+    </button>
+  </div>
+</header>
+
+<main id="main">
+
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <p class="tag reveal"><span class="dot" aria-hidden="true"></span>sandbox preview · open source · apache-2.0</p>
+      <h1 class="reveal">Give your agents a budget, <span class="hl">not your card.</span></h1>
+      <p class="lede reveal">Spendkit gives every AI agent its own wallet with hard limits. Fund one card with USDC, hand each agent a budget, and let it pay over MCP or REST. The card number never reaches the agent.</p>
+      <div class="cta reveal">
+        <a class="btn primary" href="https://github.com/spendkit/spendkit">View on GitHub</a>
+        <a class="btn ghost" href="https://github.com/spendkit/spendkit/blob/main/docs/getting-started.md">Read the quickstart</a>
+      </div>
+      <div class="cmd reveal">
+        <span class="prompt" aria-hidden="true">$</span>
+        <code id="clone">git clone https://github.com/spendkit/spendkit</code>
+        <button class="copy" type="button" data-copy="#clone">copy</button>
+      </div>
+    </div>
+
+    <div class="term reveal" aria-label="Example payment feed">
+      <div class="term-bar">
+        <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="term-title">sandbox feed</span>
+        <span class="term-note">example</span>
+      </div>
+      <ol class="feed" id="feed" aria-live="off"></ol>
+      <div class="term-foot">
+        <span><b id="feed-ok">0</b> approved</span>
+        <span><b id="feed-no">0</b> declined</span>
+        <span><b>0</b> double charges</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="how">
+  <div class="wrap">
+    <p class="kicker">// how it works</p>
+    <h2>One card. A wallet for every agent.</h2>
+    <ol class="steps">
+      <li><span class="n">01</span><h3>Verify</h3><p>The owner passes card KYC once and gets one virtual card.</p></li>
+      <li><span class="n">02</span><h3>Fund</h3><p>Send USDC on Base to a deposit address. It lands on the card.</p></li>
+      <li><span class="n">03</span><h3>Set budgets</h3><p>Give each agent a balance, a per-payment cap, a daily cap and allowed categories.</p></li>
+      <li><span class="n">04</span><h3>Agents pay</h3><p>Over MCP or REST. Every payment is checked against the limits before money moves.</p></li>
+    </ol>
+  </div>
+</section>
+
+<section class="band" id="limits">
+  <div class="wrap">
+    <p class="kicker">// try the limits</p>
+    <h2>Autonomy with a ceiling.</h2>
+    <p class="sub">Set a policy, then let the agent try to spend. This runs the same three checks, in the same order, as <a href="https://github.com/spendkit/spendkit/blob/main/src/lib/services/spendPolicy.ts"><code>evaluate()</code></a> in the service.</p>
+
+    <div class="play">
+      <div class="panel">
+        <div class="panel-h"><span>policy</span><span class="dim">research-bot</span></div>
+        <div class="field">
+          <label for="perTx">per payment <output id="perTxOut">$20</output></label>
+          <input id="perTx" type="range" min="5" max="100" step="5" value="20">
+        </div>
+        <div class="field">
+          <label for="daily">per day <output id="dailyOut">$50</output></label>
+          <input id="daily" type="range" min="10" max="300" step="10" value="50">
+        </div>
+        <div class="field">
+          <span class="label">allowed categories</span>
+          <div class="chips" id="chips" role="group" aria-label="Allowed merchant categories"></div>
+        </div>
+        <pre class="json" id="policyJson" aria-label="Policy as JSON"></pre>
+      </div>
+
+      <div class="panel">
+        <div class="panel-h"><span>agent tries to pay</span><button class="link" id="newDay" type="button">new day ↺</button></div>
+        <div class="tries" id="tries"></div>
+        <div class="meter" aria-hidden="true"><i id="meterBar"></i></div>
+        <p class="meter-l"><span>spent today <b id="spent">$0.00</b> of <b id="cap">$50.00</b></span><span id="left" class="dim"></span></p>
+        <ol class="log" id="log" aria-live="polite"><li class="empty">Pick a purchase above. Nothing has been attempted yet.</li></ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="connect">
+  <div class="wrap two">
+    <div>
+      <p class="kicker">// connect an agent</p>
+      <h2>MCP first. REST too.</h2>
+      <p class="sub">One URL, one bearer token per agent, the same rules either way. Revoke a token and that agent stops paying at once.</p>
+      <ul class="tools" aria-label="MCP tools">
+        <li>get_wallet</li><li>pay</li><li>list_transactions</li><li>get_checkout</li><li>pay_checkout</li><li>pay_hosted_checkout</li>
+      </ul>
+    </div>
+    <div class="code">
+      <div class="tabs" role="tablist" aria-label="Examples">
+        <button role="tab" id="t-mcp" aria-controls="p-mcp" aria-selected="true" type="button">mcp</button>
+        <button role="tab" id="t-rest" aria-controls="p-rest" aria-selected="false" tabindex="-1" type="button">rest</button>
+        <button role="tab" id="t-wallet" aria-controls="p-wallet" aria-selected="false" tabindex="-1" type="button">wallet</button>
+        <span class="spacer"></span>
+        <button class="copy" type="button" id="copyTab">copy</button>
+      </div>
+      <pre role="tabpanel" id="p-mcp" aria-labelledby="t-mcp" tabindex="0"><span class="c"># add Spendkit to Claude Code as an MCP server</span>
+claude mcp add --transport http spendkit \
+  http://127.0.0.1:8787/mcp \
+  --header <span class="s">"Authorization: Bearer ak_..."</span></pre>
+      <pre role="tabpanel" id="p-rest" aria-labelledby="t-rest" tabindex="0" hidden><span class="c"># one call; limits are checked before any money moves</span>
+curl -s http://127.0.0.1:8787/agent/v1/pay \
+  -H <span class="s">"Authorization: Bearer ak_..."</span> \
+  -H <span class="s">"content-type: application/json"</span> \
+  -d <span class="s">'{"amountCents":1250,"merchant":"Example API",
+       "mcc":"5734","idempotencyKey":"order-1"}'</span></pre>
+      <pre role="tabpanel" id="p-wallet" aria-labelledby="t-wallet" tabindex="0" hidden><span class="c"># what the agent can still spend</span>
+curl -s http://127.0.0.1:8787/agent/v1/wallet \
+  -H <span class="s">"Authorization: Bearer ak_..."</span>
+
+<span class="c"># →</span> { <span class="k">"balanceCents"</span>: <span class="n">1000</span>,
+    <span class="k">"limits"</span>: { <span class="k">"perTransactionCents"</span>: <span class="n">2000</span>,
+                <span class="k">"dailyCents"</span>: <span class="n">5000</span> },
+    <span class="k">"remainingTodayCents"</span>: <span class="n">5000</span> }</pre>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap">
+    <p class="kicker">// what is in the box</p>
+    <h2>Three pieces, one ledger.</h2>
+    <div class="cards">
+      <article>
+        <h3><span class="glyph" aria-hidden="true">▚</span>Agent wallets</h3>
+        <p>Budgets, per-payment and daily caps, category allow-lists. Retries with the same key never pay twice. Reclaim unspent balance or revoke an agent at any time.</p>
+      </article>
+      <article>
+        <h3><span class="glyph" aria-hidden="true">▞</span>Checkout for merchants</h3>
+        <p>Create a checkout with one call and hand the agent the link. The agent pays from its wallet, and you are paid out in USDC.</p>
+      </article>
+      <article>
+        <h3><span class="glyph" aria-hidden="true">▙</span>Developer API</h3>
+        <p>Embed it in your product: create users, hand them a hosted verification page, manage their agents, and receive signed webhooks.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="band" id="status">
+  <div class="wrap">
+    <p class="kicker">// status</p>
+    <h2>Test money, real plumbing.</h2>
+    <div class="status">
+      <div>
+        <h3 class="ok">what is real</h3>
+        <ul>
+          <li>Card issuing and KYC through the Miden sandbox</li>
+          <li>Testnet USDC deposits on Base Sepolia</li>
+          <li>A double-entry ledger in Postgres</li>
+          <li>Limits enforced on every payment</li>
+        </ul>
+      </div>
+      <div>
+        <h3 class="no">what is not, yet</h3>
+        <ul>
+          <li>No real money: sandbox and testnet only</li>
+          <li>Runs on your machine; there is no hosted service</li>
+          <li>No production key custody</li>
+          <li>No bank payouts or refunds</li>
+        </ul>
+      </div>
+    </div>
+    <p class="fine">The full list is in <a href="https://github.com/spendkit/spendkit/blob/main/docs/production-gaps.md">production-gaps.md</a>. Running it needs Miden sandbox credentials.</p>
+  </div>
+</section>
+
+<section class="end">
+  <div class="wrap">
+    <h2>Read the code. Run the sandbox.</h2>
+    <div class="cta center">
+      <a class="btn primary" href="https://github.com/spendkit/spendkit">View on GitHub</a>
+      <a class="btn ghost" href="https://github.com/spendkit/spendkit/blob/main/docs/architecture.md">Architecture</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <span class="brand small">spendkit<span class="cursor" aria-hidden="true"></span></span>
+    <span class="dim">Sandbox preview. Test money only.</span>
+    <span class="spacer"></span>
+    <a href="https://github.com/spendkit/spendkit">github</a>
+    <a href="https://github.com/spendkit/spendkit/tree/main/docs">docs</a>
+    <a href="https://github.com/spendkit/spendkit/security/policy">security</a>
+    <a href="https://github.com/spendkit/spendkit/blob/main/LICENSE">apache-2.0</a>
+  </div>
+</footer>
+
+<script src="/main.js" defer></script>
+</body>
+</html>
