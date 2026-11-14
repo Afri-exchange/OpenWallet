@@ -1,10 +1,10 @@
-# agent-cards docs
+# Spendkit docs
 
 Written 2026-10-19 from the code in the working tree (Mira is still building parts of it; each doc marks what is OPEN).
 
 | Doc | Covers |
 | --- | --- |
-| [architecture.md](architecture.md) | **Start here if you are working on agent-cards itself.** Components, the ledger, key flows, data model, security model, failure handling, known limits |
+| [architecture.md](architecture.md) | **Start here if you are working on Spendkit itself.** Components, the ledger, key flows, data model, security model, failure handling, known limits |
 | [getting-started.md](getting-started.md) | **Start here if you are integrating.** Sandbox keys in one command, first agent payment, sample shop, connecting an agent, troubleshooting |
 | [Checkout SDK](../sdk/checkout/README.md) | `@agent-cards/checkout` reference: merchant and agent clients, statuses, payouts, the HTTP API table |
 | [Developer demos](../examples/developer/README.md) | Runnable scripts for the developer API: onboarding and the hosted connect page, agent limits, privacy (one-time card) mode, an MCP agent, a signed-webhook receiver with tests |

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <meta name="description" content="Give your AI agents a safe budget on a real card, or let agents pay your checkout. Per-payment and daily limits, merchant-category allow-lists, idempotent payments, instant revoke. Sandbox preview.">
-<title>Agent Cards · Give your agents a budget, not your card</title>
+<title>Spendkit · Give your agents a budget, not your card</title>
 <link rel="stylesheet" href="/assets/site.css">
 <style>
   .hero{position:relative;overflow:hidden;padding:84px 0 72px;isolation:isolate}
@@ -225,7 +225,7 @@
 <body>
 <a class="skip" href="#main">Skip to content</a>
 <header class="nav"><div class="wrap">
-  <a class="brand" href="/"><span class="logo" aria-hidden="true"></span>Agent Cards</a>
+  <a class="brand" href="/"><span class="logo" aria-hidden="true"></span>Spendkit</a>
   <nav class="nav-links" aria-label="Main"><a class="keep" href="/docs">Docs</a><a href="/app#developers">Developers</a></nav>
   <span class="spacer"></span>
   <button class="icon-btn" type="button" data-theme-toggle aria-label="Toggle theme"></button>
@@ -260,7 +260,7 @@
       <div class="slot a"><span class="fb f1" aria-hidden="true">✓ MCC 5734</span><span class="fb f2" aria-hidden="true">$50 / day</span><span class="fb f3" aria-hidden="true">⟳ idempotent</span><div class="vcard" role="img" aria-label="Illustration of a virtual card">
         <div style="display:flex;justify-content:space-between;align-items:center"><div class="chip"></div><span style="font-size:12px;opacity:.85">research-bot · $20 / payment</span></div>
         <div class="pan">••••  ••••  ••••  4242</div>
-        <div class="meta"><span>AGENT CARDS<br><span style="opacity:.7">Sandbox</span></span><span class="net">VISA</span></div>
+        <div class="meta"><span>SPENDKIT<br><span style="opacity:.7">Sandbox</span></span><span class="net">VISA</span></div>
       </div></div>
       <div class="code slot b" data-lang="POST /agent/v1/pay"><pre><span class="c"># one call; limits are checked before any money moves</span>
 curl <span class="s">/agent/v1/pay</span> \
@@ -397,7 +397,7 @@ curl <span class="s">/agent/v1/pay</span> \
 </main>
 
 <footer class="foot"><div class="wrap">
-  <div><a class="brand" href="/" style="margin-bottom:8px"><span class="logo" aria-hidden="true"></span>Agent Cards</a><br>Sandbox preview. Test money only.</div>
+  <div><a class="brand" href="/" style="margin-bottom:8px"><span class="logo" aria-hidden="true"></span>Spendkit</a><br>Sandbox preview. Test money only.</div>
   <div><a href="/docs">Docs</a><a href="/docs/checkout">Checkout</a><a href="/docs#agent-api">Agent API</a><a href="/docs#mcp">MCP</a><a href="/app#developers">Developers</a><a href="/app">Dashboard</a></div>
 </div></footer>
 <div id="msg" role="status" aria-live="polite"></div>

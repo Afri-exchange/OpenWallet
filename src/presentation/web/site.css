@@ -1,4 +1,4 @@
-/* Agent Cards design system. One file, no fonts or images to fetch: system type, CSS-drawn art. */
+/* Spendkit design system. One file, no fonts or images to fetch: system type, CSS-drawn art. */
 :root {
   --bg:#fff; --bg2:#f1f6ff; --surface:#fff; --ink:#0f142d; --ink2:#3b4466; --muted:#5f6a87; --line:#e3e9f5; --line2:#cfd9ee;
   --accent:#0a6cff; --accent2:#0a6cff; --accent-ink:#fff; --accent-soft:#dbeafe; --glow:rgba(10,108,255,.22);

@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Agent Cards: demo</title>
+<title>Spendkit: demo</title>
 <style>
 *{box-sizing:border-box;margin:0}
 html,body{height:100%;background:#0e1117;color:#e8ebf2;font:20px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;overflow:hidden}
@@ -28,7 +28,7 @@ pre{background:#171b24;border:1px solid #262c3a;border-radius:12px;padding:1.2em
 </style></head><body>
 
 <section class="slide on">
-  <div class="kick">Agent Cards · sandbox demo</div>
+  <div class="kick">Spendkit · sandbox demo</div>
   <h1>Give your AI agent<br>a card it can't overspend.</h1>
   <p class="sub">A developer ships a shopping agent. Their users verify once, fund a card, and stay in control of what the agent can buy.</p>
 </section>
@@ -138,7 +138,7 @@ node --env-file=examples/developer/.env.developer-demo \
   <p class="sub">Dashboard: http://127.0.0.1:8787/app</p>
 </section>
 
-<div class="foot"><span>Agent Cards · sandbox</span><span id="n"></span></div>
+<div class="foot"><span>Spendkit · sandbox</span><span id="n"></span></div>
 <script>
 const s=[...document.querySelectorAll('.slide')];let i=0;
 const show=k=>{i=Math.max(0,Math.min(s.length-1,k));s.forEach((e,j)=>e.classList.toggle('on',j===i));document.getElementById('n').textContent=(i+1)+' / '+s.length;location.hash=i+1};

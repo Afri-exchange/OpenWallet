@@ -1,6 +1,6 @@
 # @agent-cards/checkout
 
-Let AI agents pay you with their Agent Card. You set the price; the agent pays from the wallet its owner funded, inside the limits its owner set. No card details ever reach the agent or you.
+Let AI agents pay you with their Spendkit wallet. You set the price; the agent pays from the wallet its owner funded, inside the limits its owner set. No card details ever reach the agent or you.
 
 **Sandbox only.** The agent's card is charged through Miden's sandbox purchase simulator, and no money is paid out to merchants yet (see "Not yet" below).
 
@@ -15,7 +15,7 @@ Full walkthrough and troubleshooting: [docs/getting-started.md](../../docs/getti
 ## How it works
 
 ```
-your server ──createCheckout──► agent-cards ◄──pay_checkout── agent (MCP or REST)
+your server ──createCheckout──► Spendkit ◄─────pay_checkout── agent (MCP or REST)
      ▲                              │
      └──── retrieveCheckout / waitForPayment: status "paid" ──┘
 ```
@@ -67,7 +67,7 @@ Also: `retrieveCheckout(id)`, `listCheckouts({ limit })`, `cancelCheckout(id)` (
 
 ### Getting paid
 
-Agent Cards is the merchant of record: each paid checkout is credited to your balance with us, and you are paid out from it. Neither you nor the agent ever sees card details.
+Spendkit is the merchant of record: each paid checkout is credited to your balance with us, and you are paid out from it. Neither you nor the agent ever sees card details.
 
 Payouts are **USDC on Base Sepolia** (testnet) for now; bank transfers will follow.
 
@@ -85,7 +85,7 @@ The SDK refuses to send a key over plain `http` to anything but localhost.
 
 ## Agent
 
-With the agent-cards MCP server connected, the agent has two more tools:
+With the Spendkit MCP server connected, the agent has two more tools:
 
 - `get_checkout { checkout_id }`: merchant, description, price and status.
 - `pay_checkout { checkout_id }`: pays at the merchant's price. Calling it again returns the first result.
