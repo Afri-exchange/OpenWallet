@@ -119,7 +119,7 @@ function showLoggedOut() {
     </div>
     <div class="art" aria-hidden="true">
       <div class="vcard"><div style="display:flex;justify-content:space-between;align-items:center"><span class="chip"></span><span class="net">VISA</span></div>
-        <div><div class="pan">•••• •••• •••• ••••</div></div><div class="meta"><span>AGENT CARDS</span><span>SANDBOX</span></div></div>
+        <div><div class="pan">•••• •••• •••• ••••</div></div><div class="meta"><span>SPENDKIT</span><span>SANDBOX</span></div></div>
     </div></div>`;
   root.querySelectorAll(".tab").forEach((b) => (b.onclick = () => { authTab = b.dataset.tab; paintAuth(); $("#authForm input")?.focus(); }));
   paintAuth();
@@ -179,7 +179,7 @@ function showView() {
   const v = VIEWS.includes(h) ? h : "overview";
   document.querySelectorAll("[data-view]").forEach((p) => (p.hidden = p.dataset.view !== v));
   document.querySelectorAll(".side a[data-v]").forEach((a) => (a.dataset.v === v ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
-  document.title = `${cap(v)} · Agent Cards`;
+  document.title = `${cap(v)} · Spendkit`;
   const panel = $(`[data-view="${v}"]`);
   panel.classList.remove("enter"); void panel.offsetWidth; panel.classList.add("enter");
 }

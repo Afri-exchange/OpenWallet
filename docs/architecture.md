@@ -1,6 +1,6 @@
 # Architecture
 
-How agent-cards is built: the parts, how money and data move between them, and why it is shaped this way. This is the map. The per-area docs (linked throughout) hold the detail and the runbooks.
+How Spendkit is built: the parts, how money and data move between them, and why it is shaped this way. This is the map. The per-area docs (linked throughout) hold the detail and the runbooks.
 
 Written 2026-10-26 from the code on `main` plus the working tree. **Sandbox only:** `src/main.ts` refuses to start unless `MIDEN_BASE_URL` is the Miden sandbox. What blocks production is in [production-gaps.md](production-gaps.md) and [checkout-payouts.md](checkout-payouts.md#before-mainnet).
 
@@ -24,7 +24,7 @@ Written 2026-10-26 from the code on `main` plus the working tree. **Sandbox only
 
 ## 1. What the system does
 
-agent-cards gives AI agents a way to pay for things without a human handing over a card number. It is built on the [Miden Workspace API](miden-api.md), a card-issuance REST API (not the Miden blockchain).
+Spendkit gives AI agents a way to pay for things without a human handing over a card number. It is built on the [Miden Workspace API](miden-api.md), a card-issuance REST API (not the Miden blockchain).
 
 - A person (the **owner**) passes card KYC once and gets **one real Visa card** under their own Miden customer.
 - The owner funds it by sending **USDC on Base** to a deposit address tied to that card.
@@ -46,7 +46,7 @@ flowchart LR
     Dev["Developer server<br/>(dk_)"]
   end
 
-  subgraph Service["agent-cards service (one Node process)"]
+  subgraph Service["Spendkit service (one Node process)"]
     HTTP["HTTP + MCP<br/>routes -> controllers"]
     App["CardholderInteractor<br/>signup, KYC, agents, pay, funding"]
     Checkout["CheckoutInteractor<br/>checkouts, settlement, payouts"]
@@ -241,7 +241,7 @@ Fillers share a `PageFiller` interface (`filler.ts`); `RoutingFiller` picks one 
 
 ### 5.7 `DeveloperInteractor`
 
-Developers embed agent-cards in their product. They sign up for a `dk_` key, create users keyed by their own `externalId` (idempotent), mint short-lived `us_` sessions for the hosted `/connect` page (KYC and spend controls), and create agents. State changes are reported to the developer as **signed webhooks**: `kyc.updated`, `card.issued`, `funding.completed`, `spend.settled`.
+Developers embed Spendkit in their product. They sign up for a `dk_` key, create users keyed by their own `externalId` (idempotent), mint short-lived `us_` sessions for the hosted `/connect` page (KYC and spend controls), and create agents. State changes are reported to the developer as **signed webhooks**: `kyc.updated`, `card.issued`, `funding.completed`, `spend.settled`.
 
 - Signature: `x-agentcards-signature: t=<unix>,v1=HMAC-SHA256(secret, "<t>.<raw body>")`, with `x-agentcards-event-id` for deduplication. Receivers reject a timestamp older than five minutes.
 - Delivery: any 2xx is success; otherwise retried after 30 s, 1 m, 2 m ... up to 6 h, eight tries. Redirects are not followed; private-address webhook URLs are refused outside the sandbox. `deliverDue()` is single-flight and deliberately not awaited by the background loop.

@@ -1,4 +1,4 @@
-# OpenWallet
+# Spendkit
 
 Virtual cards for AI agents, funded with stablecoins. Card issuing is pluggable: a built-in **mock** provider runs with no external accounts, and the [Miden Workspace API](https://docs.miden.co/getting-started) (the card-issuance REST API, not the Miden blockchain) is the first real provider. See [card providers](docs/card-providers.md).
 
@@ -8,11 +8,11 @@ Virtual cards for AI agents, funded with stablecoins. Card issuing is pluggable:
 
 - **Integrating a merchant or agent?** [docs/getting-started.md](docs/getting-started.md): `pnpm dev:up`, then `pnpm dev:keys` for sandbox keys and a paid test checkout. Then the [checkout SDK](sdk/checkout/README.md) and the [sample shop](examples/shop/README.md).
 - **Building a product where your users get cards for their agents?** [docs/developers.md](docs/developers.md) and the [developer demos](examples/developer/README.md).
-- **Working on agent-cards itself?** Start with the [architecture](docs/architecture.md), then [docs/](docs/README.md).
+- **Working on Spendkit itself?** Start with the [architecture](docs/architecture.md), then [docs/](docs/README.md).
 
 ## How it fits together
 
-[![agent-cards architecture](docs/architecture.png)](docs/architecture.svg)
+[![Spendkit architecture](docs/architecture.png)](docs/architecture.svg)
 
 1. A user signs up and passes card KYC. The card provider issues one card.
 2. USDC sent to the user's Base deposit address is credited to our ledger, then moved onto the card.

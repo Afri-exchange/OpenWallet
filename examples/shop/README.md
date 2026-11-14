@@ -4,7 +4,7 @@ A small coffee shop that shows how a merchant takes payment from an AI agent: pr
 
 ## Run it
 
-From the repo root, with the agent-cards sandbox server running (default `http://127.0.0.1:8787`):
+From the repo root, with the Spendkit sandbox server running (default `http://127.0.0.1:8787`):
 
 No keys yet? Run `node --import tsx scripts/dev-quickstart.ts` from the repo root; it writes `.env.sandbox-keys` with a merchant key and a funded demo agent token (see [getting started](../../docs/getting-started.md)).
 
@@ -17,7 +17,7 @@ node --env-file=../../.env.sandbox-keys --import tsx server.ts    # http://127.0
 
 | Env var | Default | |
 | --- | --- | --- |
-| `AGENT_CARDS_URL` | `http://127.0.0.1:8787` | the agent-cards server |
+| `AGENT_CARDS_URL` | `http://127.0.0.1:8787` | the Spendkit server |
 | `PORT` | `4100` | the shop |
 | `AGENT_CARDS_SECRET_KEY` | none | your `mk_…` key; if unset, the shop signs up once and saves the key to `.merchant-key` (gitignored) |
 | `AGENT_CARDS_AGENT_TOKEN` | none | an `ak_…` token; if set, the order page shows **Pay as demo agent**, standing in for the shopper's agent |
@@ -40,4 +40,4 @@ Orders are held in memory, so a restart forgets them. A real shop would store th
 node --import tsx --test shop.test.ts
 ```
 
-Runs the shop through the real SDK against an in-memory stand-in for the agent-cards API.
+Runs the shop through the real SDK against an in-memory stand-in for the Spendkit API.

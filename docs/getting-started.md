@@ -1,6 +1,6 @@
 # Getting started (developers)
 
-For developers who want to **accept payments from agents** (the checkout SDK) or **connect an agent** to an Agent Card wallet. About ten minutes to a first paid checkout. Everything here runs in the sandbox: no real money moves.
+For developers who want to **accept payments from agents** (the checkout SDK) or **connect an agent** to a Spendkit wallet. About ten minutes to a first paid checkout. Everything here runs in the sandbox: no real money moves.
 
 ## What you need
 
