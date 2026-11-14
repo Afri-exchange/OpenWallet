@@ -5,7 +5,7 @@ This project handles card details, wallet keys and money movement. Please report
 ## Reporting a vulnerability
 
 Use GitHub's private reporting: **Security → Report a vulnerability** on this repository
-(https://github.com/spendkit/OpenWallet/security/advisories/new).
+(https://github.com/spendkit/spendkit/security/advisories/new).
 
 Do not open a public issue, pull request or discussion for a suspected vulnerability.
 
@@ -16,7 +16,7 @@ Never include real secrets, card numbers, mnemonics or personal data in a report
 
 ## Scope and status
 
-OpenWallet is **sandbox only and not production-ready**. It refuses to start against non-sandbox Miden or Circle
+Spendkit is **sandbox only and not production-ready**. It refuses to start against non-sandbox Miden or Circle
 hosts. The known gaps are listed in [docs/production-gaps.md](docs/production-gaps.md); those are not
 vulnerabilities to report, but fixes are welcome.
 

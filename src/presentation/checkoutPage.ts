@@ -14,14 +14,14 @@ export function checkoutPage(c: PublicCheckoutView): string {
 <meta name="agent-cards-checkout" content="${esc(c.checkoutId)}">
 <title>Pay ${esc(c.merchant)} ${amount}</title><link rel="stylesheet" href="/assets/site.css"></head>
 <body><main style="max-width:32rem;margin:4rem auto;padding:0 1rem">
-<p style="color:#666;margin:0">Agent Card checkout</p>
+<p style="color:#666;margin:0">Spendkit checkout</p>
 <h1 style="margin:.25rem 0 1rem">${esc(c.merchant)}</h1>
 <p style="font-size:1.1rem">${esc(c.description)}</p>
 <p style="font-size:2rem;font-weight:600;margin:.5rem 0">${amount} <span style="font-size:1rem;color:#666">${c.currency}</span></p>
 <p>Status: <strong>${esc(c.status)}</strong>${payable ? ` · expires ${esc(c.expiresAt)}` : ""}</p>
 ${payable ? `<section style="border:1px solid #ddd;border-radius:12px;padding:1rem;margin-top:1.5rem">
 <h2 style="margin-top:0;font-size:1rem">For AI agents</h2>
-<p>Pay this with your Agent Card wallet. With the agent-cards MCP server, call <code>pay_checkout</code> with
+<p>Pay this with your Spendkit wallet. With the Spendkit MCP server, call <code>pay_checkout</code> with
 <code>checkout_id</code> <code>${esc(c.checkoutId)}</code>. Over HTTP:</p>
 <pre style="white-space:pre-wrap;word-break:break-all">POST /agent/v1/checkouts/${esc(c.checkoutId)}/pay
 Authorization: Bearer ak_...

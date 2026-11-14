@@ -1,4 +1,4 @@
-# Demo guide: Agent Cards (sandbox)
+# Demo guide: Spendkit (sandbox)
 
 Sandbox only. No real money moves.
 
@@ -15,12 +15,12 @@ That IP must be on the whitelist in the Miden sandbox dashboard. Last known whit
 ## 1. Start the service
 
 ```
-cd /Volumes/External/agent-cards
-scripts/sandbox-up.sh                # Postgres + service on http://127.0.0.1:8787
+cd path/to/your/clone
+pnpm dev:up                           # Postgres + service on http://127.0.0.1:8787
 curl -s http://127.0.0.1:8787/healthz   # should print {"ok":true}
 ```
 
-Needs `MIDEN_CLIENT_ID`, `MIDEN_CLIENT_SECRET`, `MIDEN_UNIQUE_KEY` in the shell (they already are). Logs: `.run/server.log`. Stop: `kill $(cat .run/server.pid)`.
+Uses the mock card provider unless `MIDEN_*` is set. Logs: `.run/server.log`. Stop: `pnpm dev:down`.
 
 ## 2. Get a funded test agent in one command
 
