@@ -35,7 +35,7 @@ export interface CardholderContext {
   addresses: DepositAddressRepository;
   /**
    * The deposit-address provider: the address for a unique index. Our HD wallet today (sync); a custody
-   * provider such as Utila would call its API here (hence async), keyed by the same index.
+   * provider would call its API here (hence async), keyed by the same index.
    */
   deriveAddress: (index: number) => string | Promise<string>;
   tiers: Record<Tier, TierLimits>;
