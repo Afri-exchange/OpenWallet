@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<meta name="description" content="Agent Cards Checkout documentation: let AI agents pay your checkout. Quickstart, SDK, statuses, payouts and the merchant HTTP API.">
-<title>Checkout docs · Agent Cards</title>
+<meta name="description" content="Spendkit Checkout documentation: let AI agents pay your checkout. Quickstart, SDK, statuses, payouts and the merchant HTTP API.">
+<title>Checkout docs · Spendkit</title>
 <link rel="stylesheet" href="/assets/site.css">
 <style>
   .docs{display:grid;grid-template-columns:260px minmax(0,1fr);gap:48px;align-items:start;padding-top:32px}
@@ -48,7 +48,7 @@
 <body>
 <a class="skip" href="#content">Skip to content</a>
 <header class="nav"><div class="wrap">
-  <a class="brand" href="/"><span class="logo" aria-hidden="true"></span>Agent Cards</a>
+  <a class="brand" href="/"><span class="logo" aria-hidden="true"></span>Spendkit</a>
   <nav class="nav-links" aria-label="Main"><a class="keep" href="/docs">Docs</a><a href="/app#developers">Developers</a></nav>
   <span class="spacer"></span>
   <button class="icon-btn" type="button" data-theme-toggle aria-label="Toggle theme"></button>
@@ -57,7 +57,7 @@
 
 <div class="wrap docs">
 <nav id="side" aria-label="Documentation">
-  <div class="products" role="group" aria-label="Product"><a href="/docs">Agent Cards</a><a href="/docs/checkout" aria-current="page">Checkout</a></div>
+  <div class="products" role="group" aria-label="Product"><a href="/docs">Spendkit</a><a href="/docs/checkout" aria-current="page">Checkout</a></div>
   <div class="search"><label class="sr" for="q">Search the docs</label><input id="q" type="search" placeholder="Search checkout docs" autocomplete="off"><kbd>/</kbd></div>
   <ul class="tree">
     <li data-k="overview about"><a href="#intro">Introduction</a></li>
@@ -79,7 +79,7 @@
 </nav>
 
 <article id="content">
-<h1 id="intro">Agent Cards Checkout</h1>
+<h1 id="intro">Spendkit Checkout</h1>
 <p class="lead">Let AI agents pay you. You set the price; the agent pays from the wallet its owner funded, inside the limits its owner set. No card details ever reach the agent or you.</p>
 <div class="note warn"><p><b>Sandbox only.</b> The agent's card is charged through Miden's sandbox purchase simulator, and payouts are testnet USDC. Examples use this server's address (<code>&lt;origin&gt;</code>). The SDK is <code>@agent-cards/checkout</code> (<code>sdk/checkout</code> in the repo): no dependencies, not on npm yet, so import it by path.</p></div>
 <div class="grid g3" style="margin:24px 0">
@@ -127,7 +127,7 @@ console.log(c.checkoutUrl);   <span class="s">// hand this (or c.checkoutId) to 
 <li>You fulfil the order once the checkout reads <code>paid</code>.</li>
 </ol>
 <p>A checkout is paid at most once. If a payment is declined (limits, balance, or the card network), the checkout stays <code>open</code> and the agent can try again later.</p>
-<div class="note"><p>Agent Cards is the merchant of record: each paid checkout is credited to your balance with us, and you are paid out from it. Neither you nor the agent ever sees card details.</p></div>
+<div class="note"><p>Spendkit is the merchant of record: each paid checkout is credited to your balance with us, and you are paid out from it. Neither you nor the agent ever sees card details.</p></div>
 
 <h2 id="statuses">Checkout statuses</h2>
 <div class="tw scroll"><table><thead><tr><th>Status</th><th>Meaning</th><th>What to do</th></tr></thead><tbody>
@@ -175,7 +175,7 @@ html.body += checkoutButton(c);    <span class="s">// "Pay $12.99 with Agent Car
 </ul>
 
 <h2 id="agent">Agent side</h2>
-<p>With the Agent Cards MCP server connected (see <a href="/docs#mcp">Agent Cards · MCP</a>), an agent has two checkout tools:</p>
+<p>With the Spendkit MCP server connected (see <a href="/docs#mcp">Spendkit · MCP</a>), an agent has two checkout tools:</p>
 <div class="tw scroll"><table><thead><tr><th>Tool</th><th>Arguments</th><th>Returns</th></tr></thead><tbody>
 <tr><td><code>get_checkout</code></td><td><code>checkout_id</code></td><td>Merchant, description, price and status.</td></tr>
 <tr><td><code>pay_checkout</code></td><td><code>checkout_id</code></td><td>Pays at the merchant's price. Calling it again returns the first result.</td></tr>
@@ -210,7 +210,7 @@ html.body += checkoutButton(c);    <span class="s">// "Pay $12.99 with Agent Car
 </ul>
 
 <h2 id="errors">Errors</h2>
-<p>Errors are JSON: <code>{ "error": "message" }</code>. The SDK throws <code>AgentCardsError</code> with <code>status</code> and <code>message</code>. See also <a href="/docs#errors">Agent Cards · Errors</a>.</p>
+<p>Errors are JSON: <code>{ "error": "message" }</code>. The SDK throws <code>AgentCardsError</code> with <code>status</code> and <code>message</code>. See also <a href="/docs#errors">Spendkit · Errors</a>.</p>
 <div class="tw scroll"><table><thead><tr><th>Status</th><th>Typical cause here</th></tr></thead><tbody>
 <tr><td>400</td><td>Missing or invalid field, amount not a positive whole number of cents.</td></tr>
 <tr><td>401</td><td>Missing, wrong, rotated or revoked key; or the wrong kind (<code>mk_</code> vs <code>ak_</code>).</td></tr>
@@ -238,7 +238,7 @@ html.body += checkoutButton(c);    <span class="s">// "Pay $12.99 with Agent Car
 </div>
 
 <footer class="foot"><div class="wrap">
-  <div><a class="brand" href="/" style="margin-bottom:8px"><span class="logo" aria-hidden="true"></span>Agent Cards</a><br>Sandbox preview. Test money only.</div>
+  <div><a class="brand" href="/" style="margin-bottom:8px"><span class="logo" aria-hidden="true"></span>Spendkit</a><br>Sandbox preview. Test money only.</div>
   <div><a href="/">Product</a><a href="/docs">Docs</a><a href="/docs/checkout">Checkout docs</a><a href="/app#developers">Developers</a><a href="/app">Dashboard</a></div>
 </div></footer>
 <div id="msg" role="status" aria-live="polite"></div>

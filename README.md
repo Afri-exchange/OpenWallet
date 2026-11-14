@@ -1,35 +1,45 @@
-# OpenWallet
+# Spendkit
 
-Virtual cards for AI agents, funded with stablecoins, built on the [Miden Workspace API](https://docs.miden.co/getting-started) (the card-issuance REST API, not the Miden blockchain).
+Virtual cards for AI agents, funded with stablecoins. Card issuing is pluggable: a built-in **mock** provider runs with no external accounts, and the [Miden Workspace API](https://docs.miden.co/getting-started) (the card-issuance REST API, not the Miden blockchain) is the first real provider. See [card providers](docs/card-providers.md).
 
-**Status:** works end to end in the Miden sandbox. **Sandbox only, not production-ready:** see [production gaps](docs/production-gaps.md).
+**Status:** works end to end with the mock provider and in the Miden sandbox. **Sandbox only, not production-ready:** see [production gaps](docs/production-gaps.md).
 
 ## Start here
 
-- **Integrating a merchant or agent?** [docs/getting-started.md](docs/getting-started.md): `scripts/sandbox-up.sh`, then `node --import tsx scripts/dev-quickstart.ts` for sandbox keys and a paid test checkout. Then the [checkout SDK](sdk/checkout/README.md) and the [sample shop](examples/shop/README.md).
+- **Integrating a merchant or agent?** [docs/getting-started.md](docs/getting-started.md): `pnpm dev:up`, then `pnpm dev:keys` for sandbox keys and a paid test checkout. Then the [checkout SDK](sdk/checkout/README.md) and the [sample shop](examples/shop/README.md).
 - **Building a product where your users get cards for their agents?** [docs/developers.md](docs/developers.md) and the [developer demos](examples/developer/README.md).
-- **Working on agent-cards itself?** Start with the [architecture](docs/architecture.md), then [docs/](docs/README.md).
+- **Working on Spendkit itself?** Start with the [architecture](docs/architecture.md), then [docs/](docs/README.md).
 
 ## How it fits together
 
-[![agent-cards architecture](docs/architecture.png)](docs/architecture.svg)
+[![Spendkit architecture](docs/architecture.png)](docs/architecture.svg)
 
-1. A user signs up and passes card KYC. Miden issues one card.
+1. A user signs up and passes card KYC. The card provider issues one card.
 2. USDC sent to the user's Base deposit address is credited to our ledger, then moved onto the card.
 3. The owner gives agents budgets and limits. Agents pay over MCP or REST.
 4. Merchants take agent payments through checkouts and are paid out in USDC.
 
 Full structure, flows and design decisions: [docs/architecture.md](docs/architecture.md). Details: [sandbox-flow.md](docs/sandbox-flow.md), [deposit-watcher.md](docs/deposit-watcher.md), [checkout-payouts.md](docs/checkout-payouts.md).
 
-## Run the sandbox service
+## Quickstart (no accounts needed)
+
+You need Node 20+, pnpm, and either Docker or a Postgres 16 you can reach. With no `MIDEN_*` set, the built-in mock card provider is used.
 
 ```
-scripts/sandbox-up.sh                            # Postgres + the service on 127.0.0.1:8787; needs MIDEN_* in the env
-node --import tsx scripts/sandbox-demo.ts        # end-to-end check against the Miden sandbox (moves sandbox money)
-open http://127.0.0.1:8787                       # owner dashboard
+pnpm install
+pnpm dev:up              # Postgres (Docker, Homebrew, or your DATABASE_URL) + the service on http://127.0.0.1:8787
+pnpm dev:keys            # sandbox keys written to .env.sandbox-keys, then a paid $1.00 test checkout
+open http://127.0.0.1:8787   # owner dashboard
+pnpm dev:down            # stop the service
 ```
 
-Stop with `kill $(cat .run/server.pid)`. Test USDC: faucet.circle.com, Base Sepolia.
+To use the Miden sandbox instead of the mock, export `MIDEN_CLIENT_ID`, `MIDEN_CLIENT_SECRET` and `MIDEN_UNIQUE_KEY` before `pnpm dev:up`, then `node --import tsx scripts/sandbox-demo.ts` runs an end-to-end check (moves sandbox money). Test USDC: faucet.circle.com, Base Sepolia.
+
+| Mode | Needs | Good for |
+| --- | --- | --- |
+| Mock (default) | Node, pnpm, Postgres | Trying the API, SDK, MCP and dashboard; building your integration |
+| Miden sandbox | Miden sandbox credentials and an allow-listed IP | Real issuer behaviour with test money |
+| Circle deposits | Circle API keys ([docs/circle-deposits.md](docs/circle-deposits.md)) | Crediting real testnet USDC deposits |
 
 Connect an agent (the dashboard shows these with the token filled in):
 
@@ -56,6 +66,8 @@ evaluate(card.policy, { amountCents: 2_500, mcc: "5734", spentTodayCents: 0 }); 
 Amounts are USD cents throughout.
 
 ## Configuration
+
+Every variable, with defaults and which mode needs it: [docs/configuration.md](docs/configuration.md). Copy [`.env.example`](.env.example) to start. The Miden variables below are only for `CARD_PROVIDER=miden`.
 
 `configFromEnv()` throws if a required variable is missing. Nothing loads `.env` automatically: export them or use `node --env-file=.env`.
 
