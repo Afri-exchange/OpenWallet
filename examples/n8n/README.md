@@ -1,6 +1,6 @@
-# n8n: an agent pays with its Agent Card
+# n8n: an agent pays with its Spendkit wallet
 
-Five n8n workflows that let an agent pay with its Agent Card against the sandbox service (`scripts/sandbox-up.sh`, port 8787): three pay an Agent Cards checkout (`cs_...` from `/merchant/v1/checkouts`), one pays a Stripe checkout link.
+Five n8n workflows that let an agent pay with its Spendkit wallet against the sandbox service (`pnpm dev:up`, port 8787): three pay a Spendkit checkout (`cs_...` from `/merchant/v1/checkouts`), one pays a Stripe checkout link.
 
 | File | What it does | Needs |
 | --- | --- | --- |
@@ -8,7 +8,7 @@ Five n8n workflows that let an agent pay with its Agent Card against the sandbox
 | `agent-pays-over-mcp.workflow.json` | Same, but the agent calls `get_wallet` and `pay_checkout` on the `/mcp` server (n8n's MCP Client node), as an LLM agent would. | the two keys |
 | `agent-pays-stripe-link.workflow.json` | Paste a Stripe Checkout or Payment Link and its exact total into **Stripe link**; the agent calls `pay_hosted_checkout` on `/mcp`, the service opens the page, checks the total and pays with the owner's card (the agent never sees it). Re-running on the same link returns the first result and never pays twice. | the agent key, hosted checkouts switched on (below) |
 | `agent-pays-stripe-demo.workflow.json` | **The demo.** One click: n8n creates a Stripe test checkout link itself, the agent pays it over `/mcp`, then n8n asks Stripe whether the session is `paid` and shows `demoPassed`. No link to paste. | the agent key, a Stripe test key, hosted checkouts + test-card mode (below) |
-| `ai-agent-pays-over-mcp.workflow.json` | Chat with an n8n AI Agent (Claude) that has the Agent Card MCP tools (`get_wallet`, `get_checkout`, `pay_checkout`, `pay_hosted_checkout`, `get_hosted_checkout_payment`, `list_transactions`) and pays a `cs_...` checkout or a Stripe link you give it. | the two keys and an Anthropic API key |
+| `ai-agent-pays-over-mcp.workflow.json` | Chat with an n8n AI Agent (Claude) that has the Spendkit MCP tools (`get_wallet`, `get_checkout`, `pay_checkout`, `pay_hosted_checkout`, `get_hosted_checkout_payment`, `list_transactions`) and pays a `cs_...` checkout or a Stripe link you give it. | the two keys and an Anthropic API key |
 
 The REST, MCP and Stripe-link workflows poll while a payment is `processing` (the card network answered late; the service settles it in the background, usually within a minute) and only report `PAID` once the merchant sees `paid`.
 
@@ -40,15 +40,14 @@ curl -s https://api.stripe.com/v1/checkout/sessions -u "$STRIPE_SANDBOX_SECRET_K
 
 and paste its `url` into the workflow with `amountUsd` 1. Tested on 2026-10-29: the run returned `PAID`, and Stripe's API showed the session `complete / paid`.
 
-## The demo (Stripe checkout link) and its video
+## The demo (Stripe checkout link)
 
-Video: [`docs/media/n8n-demo.mp4`](../../docs/media/n8n-demo.mp4) (24 s: the flow, Execute, then the final node showing `PAID` / Stripe `paid` / `complete`).
 
 Reproduce it from a clone (sandbox only, no real money):
 
 ```sh
 # 1. service with hosted checkouts and Stripe test-card mode (needs CARD_VAULT_KEY, see docs/checkout-swap.md)
-SWAP_ENABLED=1 SWAP_STRIPE_TEST_CARD=1 scripts/sandbox-up.sh
+SWAP_ENABLED=1 SWAP_STRIPE_TEST_CARD=1 pnpm dev:up
 # 2. a funded test agent; writes AGENT_CARDS_AGENT_TOKEN to .env.sandbox-keys
 node --import tsx scripts/dev-quickstart.ts --fresh
 # 3. n8n 2.x on Node 24 running at :5678, then import credentials + workflow (keys come from the environment, never printed)
