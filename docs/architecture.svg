@@ -3,7 +3,7 @@
 <marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="#374151"/></marker>
 </defs>
 <rect width="1200" height="560" fill="#fafaf9"/>
-<text x="40" y="44" font-size="24" font-weight="bold" fill="#1f2937">agent-cards: how it fits together</text>
+<text x="40" y="44" font-size="24" font-weight="bold" fill="#1f2937">Spendkit: how it fits together</text>
 <text x="40" y="68" font-size="14" fill="#4b5563">Sandbox only.</text>
 
 <!-- clients -->
@@ -17,7 +17,7 @@
 
 <!-- service -->
 <rect x="440" y="130" width="320" height="250" rx="10" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
-<text x="460" y="164" font-size="18" font-weight="bold" fill="#1f2937">agent-cards service</text>
+<text x="460" y="164" font-size="18" font-weight="bold" fill="#1f2937">Spendkit service</text>
 <text x="460" y="188" font-size="13" fill="#4b5563">one Node process, 127.0.0.1:8787</text>
 <text x="460" y="226" font-size="14" fill="#1f2937">HTTP and MCP API</text>
 <text x="460" y="254" font-size="14" fill="#1f2937">AppService: KYC, limits, pay, checkout</text>
