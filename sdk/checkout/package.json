@@ -1,0 +1,32 @@
+{
+  "name": "@agent-cards/checkout",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Accept payments from AI agents that hold an Agent Card wallet",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/spendkit/OpenWallet.git",
+    "directory": "sdk/checkout"
+  },
+  "bugs": "https://github.com/spendkit/OpenWallet/issues",
+  "homepage": "https://github.com/spendkit/OpenWallet/tree/main/sdk/checkout#readme",
+  "keywords": ["ai-agents", "payments", "virtual-cards", "mcp", "stablecoin"],
+  "files": ["dist", "README.md", "LICENSE"],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "tsc -p tsconfig.json"
+  }
+}

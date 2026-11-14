@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Give your AI agents a safe budget on a real card, or let agents pay your checkout. Per-payment and daily limits, merchant-category allow-lists, idempotent payments, instant revoke. Sandbox preview.">
+<title>Spendkit · Give your agents a budget, not your card</title>
+<link rel="stylesheet" href="/assets/site.css">
+<style>
+  .hero{position:relative;overflow:hidden;padding:84px 0 72px;isolation:isolate}
+  .hero .wrap{display:grid;grid-template-columns:1.05fr .95fr;gap:56px;align-items:center}
+  @media (max-width:900px){.hero{padding:48px 0}.hero .wrap{grid-template-columns:minmax(0,1fr);gap:40px}}
+  .lede{font-size:clamp(17px,2vw,20px);color:var(--ink2);max-width:34em;margin:22px 0 30px;line-height:1.55}
+  .cta{display:flex;gap:12px;flex-wrap:wrap}
+  .stage{position:relative;display:grid;gap:18px;justify-items:end}
+  .stage .slot.a{justify-self:start;width:min(100%,380px);position:relative;z-index:0}
+  .stage .vcard{transform:rotate(-3deg)}
+  .stage .code{width:min(100%,430px);margin:-70px 0 0;box-shadow:var(--shadow);position:relative;z-index:1}
+  @media (max-width:900px){.stage{justify-items:start}.stage .code{margin-top:-40px}}
+  /* product switch: one hero, two products */
+  .switch{position:relative;display:inline-grid;grid-template-columns:1fr 1fr;padding:4px;border-radius:99px;border:1px solid var(--line2);background:var(--surface);box-shadow:var(--shadow);margin-bottom:26px}
+  .switch button{position:relative;z-index:1;border:0;background:none;box-shadow:none;border-radius:99px;padding:10px 22px;font:650 15px var(--display);letter-spacing:-.01em;color:var(--ink2);transition:color .35s var(--ease)}
+  .switch button:hover:not(:disabled){transform:none;color:var(--ink)}
+  .switch button[aria-selected=true]{color:var(--accent-ink)}
+  .switch .thumb{position:absolute;top:4px;bottom:4px;left:4px;width:calc(50% - 4px);border-radius:99px;background:var(--accent);box-shadow:0 6px 18px -6px var(--glow);transition:transform .5s var(--ease)}
+  .hero[data-mode=checkout] .switch .thumb{transform:translateX(100%)}
+  .swap{display:grid;min-width:0}
+  .swap>.pane{grid-area:1/1;min-width:0}
+  .hero .pane:not(.on){pointer-events:none}
+  /* headline: each word rolls through a mask */
+  .hl{font-size:clamp(38px,6vw,68px);letter-spacing:-.04em;font-weight:700;line-height:1.02;max-width:11em}
+  .hl em{font-style:normal;color:var(--accent)}
+  .hl .w{display:inline-block;overflow:hidden;vertical-align:top;padding:.06em .04em .14em;margin:-.06em -.04em -.14em}
+  .hl .w>span{display:inline-block;transform:translateY(115%) rotate(5deg);opacity:0;transition:transform .55s var(--ease),opacity .4s var(--ease);transition-delay:calc(var(--i) * 25ms)}
+  .pane.on .hl .w>span{transform:none;opacity:1;transition-duration:.8s,.5s;transition-delay:calc(180ms + var(--i) * 55ms)}
+  .pane.out .hl .w>span{transform:translateY(-115%) rotate(-4deg)}
+  /* lede and buttons: blur in under the headline */
+  .fx{opacity:0;transform:translateY(16px);filter:blur(6px);transition:opacity .4s var(--ease),transform .55s var(--ease),filter .4s var(--ease)}
+  .pane.on .fx{opacity:1;transform:none;filter:blur(0);transition-duration:.6s,.8s,.6s;transition-delay:calc(380ms + var(--d) * 90ms)}
+  .pane.out .fx{transform:translateY(-10px)}
+  /* visuals: swing through in 3D, code panel follows */
+  .stage .slot{transition:transform .9s var(--ease),opacity .5s var(--ease)}
+  .stage:not(.on) .slot.a{opacity:0;transform:perspective(1100px) translateX(60px) rotateY(-38deg) scale(.9)}
+  .stage.out .slot.a{transform:perspective(1100px) translateX(-60px) rotateY(38deg) scale(.9)}
+  .stage:not(.on) .slot.b{opacity:0;transform:translateY(40px) scale(.97)}
+  .stage.out .slot.b{transform:translateY(-24px) scale(.97)}
+  .stage.on .slot.a{transition-delay:120ms}
+  .stage.on .slot.b{transition-delay:300ms}
+  .snap,.snap *{transition:none!important}
+  /* checkout receipt */
+  .stage[data-pane=checkout] .code{margin-top:-24px}
+  .rcpt{transform:rotate(2deg);border-radius:20px;padding:22px 22px 20px;background:var(--surface);border:1px solid var(--line2);box-shadow:0 30px 60px -26px rgba(15,138,79,.45),var(--shadow);aspect-ratio:1.586;display:flex;flex-direction:column}
+  .r-top{display:flex;justify-content:space-between;align-items:center;font-size:13px}
+  .r-brand{display:flex;gap:8px;align-items:center;font-weight:650} .r-brand .logo{width:18px;height:18px;border-radius:6px}
+  .r-status{display:grid;font-size:12px;font-weight:650}
+  .r-status>span{grid-area:1/1;justify-self:end;padding:3px 10px;border-radius:99px;transition:opacity .35s var(--ease),transform .5s var(--ease)}
+  .s-wait{background:var(--warn-soft);color:var(--warn)}
+  .s-paid{background:var(--ok-soft);color:var(--ok);opacity:0;transform:scale(.9)}
+  .r-amt{font:750 44px/1 var(--display);letter-spacing:-.04em;margin-top:auto}
+  .r-desc{color:var(--muted);font-size:14px;margin-top:6px}
+  .r-bar{height:4px;border-radius:9px;background:var(--line);margin:16px 0 14px;overflow:hidden}
+  .r-bar i{display:block;height:100%;background:var(--ok);transform:scaleX(0);transform-origin:left;transition:transform .2s var(--ease)}
+  .r-row{display:flex;gap:10px;align-items:center;font-size:13px;line-height:1.35}
+  .r-av{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);font:700 12px var(--display)}
+  .stage.on .r-bar i{transform:scaleX(1);transition:transform 1s cubic-bezier(.77,0,.175,1) .9s}
+  .stage.on .s-wait{opacity:0;transform:scale(.9);transition-delay:1.9s}
+  .stage.on .s-paid{opacity:1;transform:none;transition-delay:1.95s}
+  @media (prefers-reduced-motion:reduce){
+    .hero .pane :is(.hl .w>span,.fx,.slot,.r-status>span){transform:none!important;filter:none!important;transition-property:opacity!important;transition-duration:.25s!important}
+    .hero .pane :is(.r-bar i){transition:none!important}
+    .switch .thumb{transition-duration:.01s}
+  }
+  section.sec{padding:84px 0}
+  section.sec.alt{background:var(--bg2);border-block:1px solid var(--line)}
+  .kick{font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);margin-bottom:12px}
+  h2.t{font-size:clamp(28px,4vw,44px);letter-spacing:-.035em;max-width:18em}
+  .sub{color:var(--ink2);font-size:17px;max-width:38em;margin:16px 0 44px}
+  .steps{counter-reset:s;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
+  @media (max-width:900px){.steps{grid-template-columns:repeat(2,minmax(0,1fr))}} @media (max-width:560px){.steps{grid-template-columns:minmax(0,1fr)}}
+  .step{counter-increment:s;position:relative;padding-top:58px}
+  .step::before{content:counter(s);position:absolute;left:22px;top:20px;width:28px;height:28px;border-radius:9px;display:grid;place-items:center;font:700 14px var(--display);background:var(--accent-soft);color:var(--accent)}
+  .step h3{font-size:18px;margin-bottom:8px} .step p{color:var(--ink2);margin:0;font-size:14.5px}
+  .feat h3{font-size:17px;margin:14px 0 6px} .feat p{margin:0;color:var(--ink2);font-size:14.5px}
+  .ico{width:38px;height:38px;border-radius:11px;background:var(--accent-soft);display:grid;place-items:center}
+  .ico svg{width:19px;height:19px;stroke:var(--accent);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  h2.t+.steps,h2.t+.grid{margin-top:32px}
+  /* CSS-only tabs */
+  .tabs{display:grid;position:relative}
+  .tabs>*{min-width:0}
+  .tabs>input{position:absolute;opacity:0;pointer-events:none}
+  .tabs .tl{display:flex;gap:6px;margin-bottom:14px}
+  .tabs .tl label{padding:8px 16px;border-radius:99px;border:1px solid var(--line2);cursor:pointer;font-weight:550;color:var(--ink2);background:var(--surface)}
+  .tabs .pane{display:none}
+  #t-mcp:checked~.tl label[for=t-mcp],#t-rest:checked~.tl label[for=t-rest]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+  #t-mcp:checked~.panes .p-mcp,#t-rest:checked~.panes .p-rest{display:block}
+  #t-mcp:focus-visible~.tl label[for=t-mcp],#t-rest:focus-visible~.tl label[for=t-rest]{outline:2px solid var(--accent);outline-offset:2px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center}
+  @media (max-width:900px){.two{grid-template-columns:minmax(0,1fr)}}
+  .list{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+  .list li{display:flex;gap:12px;color:var(--ink2)} .list li b{color:var(--ink)}
+  .list svg{flex:none;width:20px;height:20px;margin-top:2px;stroke:var(--ok);fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+  .list.no svg{stroke:var(--bad)}
+  .final{text-align:center;padding:96px 0;position:relative;isolation:isolate;overflow:hidden}
+  .final h2{margin:0 auto 14px} .final .cta{justify-content:center;margin-top:28px}
+</style>
+<style>
+  /* ===== motion layer (landing.js adds .motion to <html>; without it, or with reduced motion, the page stays still) ===== */
+  :root{--violet:#7c5cff;--pink:#ff4fb8;--mint:#19d3a2;}
+  /* hero backdrop: flat shapes drifting and turning, live particle field */
+  .hero-bg{position:absolute;inset:0;z-index:-2;overflow:hidden;pointer-events:none}
+  .shapes i{position:absolute;opacity:.1}
+  .shapes i:nth-child(1){width:min(46vw,520px);aspect-ratio:1;border-radius:50%;background:var(--accent);right:-10%;top:-28%;animation:drift1 18s ease-in-out infinite alternate}
+  .shapes i:nth-child(2){width:180px;aspect-ratio:1;border-radius:40px;background:var(--violet);left:46%;bottom:-70px;animation:drift2 24s linear infinite}
+  .shapes i:nth-child(3){width:260px;aspect-ratio:1;border-radius:50%;border:28px solid var(--mint);left:-90px;top:12%;animation:drift3 20s ease-in-out infinite alternate}
+  .shapes i:nth-child(4){width:90px;aspect-ratio:1;background:var(--pink);clip-path:polygon(50% 0,100% 100%,0 100%);right:38%;top:8%;animation:drift2 30s linear infinite reverse}
+  @keyframes drift1{to{transform:translate(-8vw,10vh) scale(1.12)}}
+  @keyframes drift2{to{transform:rotate(360deg)}}
+  @keyframes drift3{to{transform:translate(6vw,-6vh) scale(.88)}}
+  .field{position:absolute;inset:0;width:100%;height:100%}
+
+  /* headline accent: solid accent */
+  .hl em{color:var(--accent)}
+
+  /* the card: tilts toward the pointer, floats, click to spin */
+  .stage .vcard{cursor:pointer;
+    transform:perspective(900px) rotate(-3deg) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg));transition:transform .25s var(--ease)}
+  .vcard.spin{animation:spinY 1s var(--ease),float 7s ease-in-out infinite}
+  @keyframes spinY{from{rotate:y 0deg}to{rotate:y 360deg}}
+  .rcpt{transform:perspective(900px) rotate(2deg) rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg));transition:transform .25s var(--ease)}
+  .stage .code{translate:calc(var(--sx,0) * -18px) calc(var(--sy,0) * -12px);transition:translate .5s var(--ease)}
+  .code pre{clip-path:inset(0)}
+  .motion .stage.on .code pre{animation:typein 1.3s steps(9,end) .55s both}
+  @keyframes typein{from{clip-path:inset(0 0 100% 0)}to{clip-path:inset(0)}}
+
+  /* floating policy badges around the card */
+  .fb{position:absolute;z-index:2;padding:6px 11px;border-radius:99px;font:650 12px var(--display);white-space:nowrap;background:var(--glass);border:1px solid var(--glass-edge);box-shadow:var(--glass-shadow);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);color:var(--ink);
+    translate:calc(var(--sx,0) * 30px) calc(var(--sy,0) * 22px);transition:translate .5s var(--ease),opacity .5s var(--ease),scale .6s var(--ease);opacity:0;scale:.6}
+  .fb.f1{top:-16px;right:-6px;color:var(--ok)} .fb.f2{left:-22px;top:46%} .fb.f3{bottom:-14px;right:18%}
+  .stage.on .fb{opacity:1;scale:1;animation:bob 4s ease-in-out infinite}
+  .stage.on .fb.f1{transition-delay:.7s;animation-delay:-1s} .stage.on .fb.f2{transition-delay:.85s;animation-delay:-2s} .stage.on .fb.f3{transition-delay:1s;animation-delay:-3s}
+  @keyframes bob{50%{transform:translateY(-7px)}}
+  @media (max-width:560px){.fb.f2{left:-6px}}
+  .ok-chip{position:absolute;right:12px;bottom:-16px;z-index:3;display:flex;gap:8px;align-items:center;padding:8px 14px;border-radius:99px;background:var(--ok);color:#fff;font:650 13px var(--display);box-shadow:0 10px 30px -8px color-mix(in srgb,var(--ok) 70%,transparent);opacity:0;transform:translateY(14px) scale(.8)}
+  .ok-chip i{width:8px;height:8px;border-radius:50%;background:#fff;animation:pulse 1.6s ease-out infinite}
+  .stage.on .ok-chip{opacity:1;transform:none;transition:opacity .4s var(--ease) 1.9s,transform .6s cubic-bezier(.34,1.56,.64,1) 1.9s}
+  .stage.out .ok-chip{opacity:0;transition:opacity .2s}
+
+  /* sandbox feed ticker */
+  .ticker{position:relative;display:flex;align-items:center;overflow:hidden;border-block:1px solid var(--line);background:var(--surface);font-size:14px;height:52px}
+  .tk-label{position:relative;z-index:2;flex:none;height:100%;display:flex;align-items:center;gap:8px;padding:0 18px 0 24px;font:650 12px var(--display);letter-spacing:.06em;text-transform:uppercase;color:var(--accent);background:var(--surface)}
+  .tk-label::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--bad);animation:blink 1.2s ease-in-out infinite}
+  .track{display:flex;gap:44px;padding-left:20px;white-space:nowrap;animation:tick 42s linear infinite;will-change:transform}
+  .ticker:hover .track{animation-play-state:paused}
+  .track span{color:var(--ink2)} .track b{color:var(--ink);font-weight:650} .track em{font-style:normal;font-family:var(--mono);color:var(--ink)}
+  .track i{font-style:normal;font-size:12px;font-weight:650;padding:2px 9px;border-radius:99px;margin-left:4px}
+  .track i.ok{background:var(--ok-soft)} .track i.bad{background:var(--bad-soft)} .track i.warn{background:var(--warn-soft)}
+  @keyframes tick{to{transform:translateX(-50%)}}
+
+  /* alt sections: a slowly drifting dot field */
+  section.sec.alt{position:relative;isolation:isolate;overflow:hidden}
+  section.sec.alt::before{content:"";position:absolute;inset:-24px;z-index:-1;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='12' cy='12' r='1.2' fill='%230a6cff' fill-opacity='.22'/%3E%3C/svg%3E");animation:dots 14s linear infinite}
+  @keyframes dots{to{transform:translate(24px,24px)}}
+
+  /* scroll reveals */
+  .motion .rv{opacity:0;transform:translateY(30px) scale(.97);filter:blur(8px);transition:opacity .7s var(--ease),transform .9s var(--ease),filter .7s var(--ease);transition-delay:calc(var(--rv,0) * 90ms)}
+  .motion .grid>.card.rv{transform:perspective(900px) rotateX(-28deg) translateY(50px) scale(.94);transform-origin:50% 0}
+  .motion .list>li.rv{transform:translateX(-24px)}
+  .motion .rv.in{opacity:1;transform:none;filter:none}
+  .motion .list>li.in svg path{stroke-dasharray:30;animation:draw .6s var(--ease) both;animation-delay:calc(var(--rv,0) * 90ms + .25s)}
+  @keyframes draw{from{stroke-dashoffset:30}to{stroke-dashoffset:0}}
+  .motion .list.no>li.in svg{animation:shake .5s var(--ease) both;animation-delay:calc(var(--rv,0) * 90ms + .4s)}
+  @keyframes shake{25%{transform:rotate(-14deg)}60%{transform:rotate(10deg)}}
+  /* section titles: words roll up through a mask */
+  .split .w{display:inline-block;overflow:hidden;vertical-align:top;padding:.06em .04em .14em;margin:-.06em -.04em -.14em}
+  .split .w>span{display:inline-block;transform:translateY(110%) rotate(6deg);transition:transform .9s var(--ease);transition-delay:calc(var(--i) * 60ms)}
+  .split.in .w>span{transform:none}
+  /* steps: a rail draws across and each number pops in turn */
+  .steps{position:relative}
+  .motion .steps::after{content:"";position:absolute;left:22px;right:22px;top:33px;height:2px;z-index:-1;background:var(--accent);transform:scaleX(0);transform-origin:left;transition:transform 1.6s cubic-bezier(.77,0,.175,1) .3s}
+  .motion .steps.in::after{transform:none}
+  @media (max-width:900px){.motion .steps::after{display:none}}
+  .motion .steps.in .step::before{animation:numpop .6s cubic-bezier(.34,1.56,.64,1) both,pulse 2.4s ease-out infinite;animation-delay:calc(var(--rv,0) * 280ms + .4s),calc(var(--rv,0) * 280ms + 1s)}
+  @keyframes numpop{from{transform:scale(0) rotate(-90deg)}}
+  /* cards: icons wobble and redraw on hover */
+  .card{position:relative}
+  .feat:hover .ico{animation:wob .7s var(--ease)}
+  .feat:hover .ico svg *{stroke-dasharray:70;animation:draw2 .9s var(--ease)}
+  @keyframes wob{30%{transform:rotate(-12deg) scale(1.15)}60%{transform:rotate(8deg) scale(1.05)}}
+  @keyframes draw2{from{stroke-dashoffset:70}to{stroke-dashoffset:0}}
+  .tabs .pane{animation:pop .45s var(--ease)}
+
+  /* buttons: magnetic, ripple */
+  .btn.mag{transition:background .2s,border-color .2s,transform .2s var(--ease),box-shadow .25s var(--ease),translate .45s var(--ease)}
+  .btn.lg{position:relative;overflow:hidden}
+  .rip{position:absolute;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:currentColor;opacity:.35;pointer-events:none;animation:rip .65s var(--ease) forwards}
+  @keyframes rip{to{transform:scale(40);opacity:0}}
+
+  /* final: orbiting cards around a breathing disc */
+  .orbits{position:absolute;inset:0;z-index:-1;display:grid;place-items:center;place-content:center;pointer-events:none}
+  .orbits>*{grid-area:1/1}
+  .ring{border-radius:50%;border:1px dashed color-mix(in srgb,var(--accent) 30%,transparent);position:relative}
+  .r1{width:min(900px,150vw);aspect-ratio:1;animation:orbit 40s linear infinite}
+  .r2{width:min(640px,100vw);aspect-ratio:1;animation:orbit 28s linear infinite reverse}
+  .ring i{position:absolute;left:50%;top:50%;width:62px;height:40px;margin:-20px 0 0 -31px;border-radius:8px;background:var(--accent);box-shadow:0 10px 24px -8px var(--glow);transform:rotate(var(--a)) translateX(calc(var(--rr) / 2)) rotate(90deg)}
+  .ring i::before{content:"";position:absolute;left:8px;top:9px;width:12px;height:9px;border-radius:2px;background:rgba(255,255,255,.8)}
+  .r1{--rr:min(900px,150vw)} .r2{--rr:min(640px,100vw)}
+  .r1 i:nth-child(1){--a:0deg} .r1 i:nth-child(2){--a:90deg;background:var(--pink)} .r1 i:nth-child(3){--a:180deg;background:var(--violet)} .r1 i:nth-child(4){--a:270deg;background:var(--mint)}
+  .r2 i:nth-child(1){--a:30deg;background:var(--mint)} .r2 i:nth-child(2){--a:150deg;background:var(--violet)} .r2 i:nth-child(3){--a:270deg}
+  @keyframes orbit{to{rotate:360deg}}
+  .core{width:min(420px,80vw);aspect-ratio:1;border-radius:50%;background:var(--accent);opacity:.07;animation:breathe 5s ease-in-out infinite}
+  @keyframes breathe{50%{transform:scale(1.15)}}
+  .final{padding:150px 0}
+  .final h2.t{font-size:clamp(34px,5.5vw,60px)}
+
+  /* page chrome added by landing.js */
+  .scrollbar{position:fixed;top:0;left:0;right:0;height:3px;z-index:60;background:var(--accent);transform:scaleX(var(--sp,0));transform-origin:left;pointer-events:none}
+  .burst{position:fixed;inset:0;width:100vw;height:100vh;z-index:90;pointer-events:none}
+  @media (prefers-reduced-motion:reduce){
+    .shapes i,.stage .vcard,.fb,.ok-chip i,.track,section.sec.alt::before,.ring,.core,.tk-label::before{animation:none!important}
+    .track{flex-wrap:nowrap}
+  }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="nav"><div class="wrap">
+  <a class="brand" href="/"><span class="logo" aria-hidden="true"></span>Spendkit</a>
+  <nav class="nav-links" aria-label="Main"><a class="keep" href="/docs">Docs</a><a href="/app#developers">Developers</a></nav>
+  <span class="spacer"></span>
+  <button class="icon-btn" type="button" data-theme-toggle aria-label="Toggle theme"></button>
+  <a class="btn primary sm" href="/app">Open dashboard</a>
+</div></header>
+
+<main id="main">
+<section class="hero" data-mode="cards">
+<div class="hero-bg" aria-hidden="true"><div class="shapes"><i></i><i></i><i></i><i></i></div><canvas class="field"></canvas></div>
+<div class="wrap">
+  <div class="copy">
+    <div class="switch" role="tablist" aria-label="Choose a product">
+      <span class="thumb" aria-hidden="true"></span>
+      <button type="button" role="tab" id="tab-cards" data-mode="cards" aria-selected="true" aria-controls="hero-copy">Cards</button>
+      <button type="button" role="tab" id="tab-checkout" data-mode="checkout" aria-selected="false" aria-controls="hero-copy" tabindex="-1">Checkout</button>
+    </div>
+    <div class="swap" id="hero-copy" role="tabpanel" aria-live="polite">
+      <div class="pane on" data-pane="cards">
+        <h1 class="hl"><span class="w" style="--i:0"><span>Give</span></span> <span class="w" style="--i:1"><span>your</span></span> <span class="w" style="--i:2"><span>agents</span></span> <span class="w" style="--i:3"><span>a</span></span> <span class="w" style="--i:4"><span><em>budget</em>,</span></span> <span class="w" style="--i:5"><span>not</span></span> <span class="w" style="--i:6"><span>your</span></span> <span class="w" style="--i:7"><span>card.</span></span></h1>
+        <p class="lede fx" style="--d:1">One card. A wallet and limits for every AI agent.</p>
+        <div class="cta fx" style="--d:2"><a class="btn accent lg" href="/app">Get started</a><a class="btn lg" href="/docs">Read the docs</a></div>
+      </div>
+      <div class="pane" data-pane="checkout" inert aria-hidden="true">
+        <h2 class="hl"><span class="w" style="--i:0"><span>Let</span></span> <span class="w" style="--i:1"><span>AI</span></span> <span class="w" style="--i:2"><span>agents</span></span> <span class="w" style="--i:3"><span><em>pay</em></span></span> <span class="w" style="--i:4"><span><em>you.</em></span></span></h2>
+        <p class="lede fx" style="--d:1">One call to create a checkout. Agents pay from their own wallet.</p>
+        <div class="cta fx" style="--d:2"><a class="btn accent lg" href="/docs/checkout#quickstart">Accept payments</a><a class="btn lg" href="/docs/checkout">Read the docs</a></div>
+      </div>
+    </div>
+  </div>
+  <div class="swap">
+    <div class="pane stage on" data-pane="cards">
+      <div class="slot a"><span class="fb f1" aria-hidden="true">✓ MCC 5734</span><span class="fb f2" aria-hidden="true">$50 / day</span><span class="fb f3" aria-hidden="true">⟳ idempotent</span><div class="vcard" role="img" aria-label="Illustration of a virtual card">
+        <div style="display:flex;justify-content:space-between;align-items:center"><div class="chip"></div><span style="font-size:12px;opacity:.85">research-bot · $20 / payment</span></div>
+        <div class="pan">••••  ••••  ••••  4242</div>
+        <div class="meta"><span>SPENDKIT<br><span style="opacity:.7">Sandbox</span></span><span class="net">VISA</span></div>
+      </div></div>
+      <div class="code slot b" data-lang="POST /agent/v1/pay"><pre><span class="c"># one call; limits are checked before any money moves</span>
+curl <span class="s">/agent/v1/pay</span> \
+  -H <span class="s">"Authorization: Bearer ak_…"</span> \
+  -d <span class="s">'{"amountCents":1250,"merchant":"Example API",
+      "mcc":"5734","idempotencyKey":"order-1"}'</span>
+
+<span class="c"># →</span> {<span class="k">"status"</span>: <span class="s">"approved"</span>, <span class="k">"amountCents"</span>: <span class="n">1250</span>}</pre></div>
+      <span class="ok-chip" aria-hidden="true"><i></i>Approved · $12.50</span>
+    </div>
+    <div class="pane stage" data-pane="checkout" inert aria-hidden="true">
+      <div class="slot a"><div class="rcpt" role="img" aria-label="Illustration of a checkout being paid by an agent">
+        <div class="r-top"><span class="r-brand"><span class="logo" aria-hidden="true"></span>Checkout</span><span class="r-status"><span class="s-wait">Awaiting agent</span><span class="s-paid">Paid</span></span></div>
+        <div class="r-amt">$12.99</div>
+        <div class="r-desc">Pro plan · 1 month</div>
+        <div class="r-bar"><i></i></div>
+        <div class="r-row"><span class="r-av" aria-hidden="true">rb</span><span><b>research-bot</b><br><span class="muted">paying from its wallet</span></span></div>
+      </div></div>
+      <div class="code slot b" data-lang="Merchant · server side"><pre><span class="k">const</span> c = <span class="k">await</span> checkout.createCheckout({
+  amountCents: <span class="n">1299</span>,
+  description: <span class="s">"Pro plan, 1 month"</span>,
+});
+<span class="c">// hand c.checkoutUrl to the agent</span>
+<span class="k">const</span> done = <span class="k">await</span> checkout
+  .waitForPayment(c.checkoutId);</pre></div>
+    </div>
+  </div>
+</div></section>
+
+<div class="ticker" aria-hidden="true"><span class="tk-label">Sandbox feed</span><div class="track">
+  <span><b>research-bot</b> → Example API <em>$12.50</em> <i class="ok">approved</i></span>
+  <span><b>travel-agent</b> → Airline <em>$640.00</em> <i class="bad">declined · over per-payment cap</i></span>
+  <span><b>design-bot</b> → Font foundry <em>$15.00</em> <i class="ok">approved</i></span>
+  <span><b>research-bot</b> retry order-1 <i class="ok">no double charge</i></span>
+  <span><b>scraper-7</b> → Casino <em>$20.00</em> <i class="bad">declined · category not allowed</i></span>
+  <span><b>ops-agent</b> <i class="warn">revoked by owner</i></span>
+  <span><b>support-bot</b> → Checkout <em>$12.99</em> <i class="ok">paid</i></span>
+</div></div>
+
+<section class="sec alt" id="how"><div class="wrap">
+  <div class="kick">How it works</div>
+  <h2 class="t">Live in four steps</h2>
+  
+  <div class="steps">
+    <div class="card step"><h3>Verify</h3><p>Pass KYC. Get a Visa card.</p></div>
+    <div class="card step"><h3>Fund</h3><p>Deposit USDC to your card.</p></div>
+    <div class="card step"><h3>Set budgets</h3><p>Limits for every agent.</p></div>
+    <div class="card step"><h3>Agents pay</h3><p>Over MCP or REST.</p></div>
+  </div>
+</div></section>
+
+<section class="sec" id="guardrails"><div class="wrap">
+  <div class="kick">Guardrails by design</div>
+  <h2 class="t">Autonomy with a ceiling</h2>
+  
+  <div class="grid g3">
+    <div class="card feat"><div class="ico"><svg viewBox="0 0 24 24"><path d="M3 12h18M12 3v18"/></svg></div><h3>Spending limits</h3><p>Per-payment and daily caps.</p></div>
+    <div class="card feat"><div class="ico"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12l3 3 5-6"/></svg></div><h3>Category allow-list</h3><p>Approved merchant types only.</p></div>
+    <div class="card feat"><div class="ico"><svg viewBox="0 0 24 24"><path d="M4 4v6h6M20 20v-6h-6"/><path d="M20 10A8 8 0 0 0 6 6l-2 4M4 14a8 8 0 0 0 14 4l2-4"/></svg></div><h3>Safe retries</h3><p>Retries never double-pay.</p></div>
+    <div class="card feat"><div class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div><h3>Funds held when unsure</h3><p>Nothing lost, nothing doubled.</p></div>
+    <div class="card feat"><div class="ico"><svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5l-7 7 7 7"/></svg></div><h3>Take back anytime</h3><p>Reclaim unspent balance.</p></div>
+    <div class="card feat"><div class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg></div><h3>Instant revoke</h3><p>Cut off an agent instantly.</p></div>
+  </div>
+</div></section>
+
+<section class="sec alt" id="agents"><div class="wrap two">
+  <div>
+    <div class="kick">Built for agents</div>
+    <h2 class="t">MCP first. REST too.</h2>
+    <p class="sub" style="margin-bottom:24px">One URL. Same rules.</p>
+    <ul class="list">
+      <li><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg><span><b>get_wallet</b></span></li>
+      <li><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg><span><b>pay</b></span></li>
+      <li><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg><span><b>list_transactions</b></span></li>
+      <li><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg><span><b>pay_hosted_checkout</b></span></li>
+    </ul>
+  </div>
+  <div class="tabs">
+    <input type="radio" name="t" id="t-mcp" checked><input type="radio" name="t" id="t-rest">
+    <div class="tl" role="presentation"><label for="t-mcp">MCP</label><label for="t-rest">REST</label></div>
+    <div class="panes">
+      <div class="pane p-mcp">
+        <div class="code" data-lang="Claude Code"><pre>claude mcp add --transport http agent-cards \
+  <span class="s">http://127.0.0.1:8787/mcp</span> \
+  --header <span class="s">"Authorization: Bearer ak_…"</span></pre></div>
+        <div class="code" data-lang="tool call · pay"><pre>{
+  <span class="k">"amount_usd"</span>: <span class="n">12.50</span>,
+  <span class="k">"merchant"</span>: <span class="s">"Example API"</span>,
+  <span class="k">"mcc"</span>: <span class="s">"5734"</span>,
+  <span class="k">"idempotency_key"</span>: <span class="s">"order-1"</span>
+}</pre></div>
+      </div>
+      <div class="pane p-rest">
+        <div class="code" data-lang="GET /agent/v1/wallet"><pre>curl http://127.0.0.1:8787/agent/v1/wallet \
+  -H <span class="s">"Authorization: Bearer ak_…"</span>
+
+{ <span class="k">"balanceCents"</span>: <span class="n">1000</span>,
+  <span class="k">"limits"</span>: { <span class="k">"perTransactionCents"</span>: <span class="n">2000</span>, <span class="k">"dailyCents"</span>: <span class="n">5000</span> },
+  <span class="k">"remainingTodayCents"</span>: <span class="n">5000</span> }</pre></div>
+        <div class="code" data-lang="POST /agent/v1/pay"><pre>curl -X POST http://127.0.0.1:8787/agent/v1/pay \
+  -H <span class="s">"Authorization: Bearer ak_…"</span> \
+  -H <span class="s">"content-type: application/json"</span> \
+  -d <span class="s">'{"amountCents":1250,"merchant":"Example API"}'</span></pre></div>
+      </div>
+    </div>
+  </div>
+</div></section>
+
+<section class="sec alt" id="sandbox"><div class="wrap">
+  <div class="kick">Sandbox today</div>
+  <h2 class="t">Test money, real plumbing</h2>
+  <div style="height:32px"></div>
+  <div class="grid g2">
+    <div class="card"><h3>What is real</h3><ul class="list" style="margin-top:14px">
+      <li><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg><span>Card and KYC via Miden sandbox.</span></li>
+      <li><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg><span>Testnet USDC deposits.</span></li>
+      <li><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg><span>Double-entry ledger.</span></li>
+      <li><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg><span>Stripe Checkout swap, $10 cap.</span></li></ul></div>
+    <div class="card"><h3>What is not</h3><ul class="list no" style="margin-top:14px">
+      <li><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg><span>No real money.</span></li>
+      <li><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg><span>Localhost only.</span></li>
+      <li><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg><span>No production custody yet.</span></li>
+      <li><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg><span>No bank payouts or refunds yet.</span></li></ul></div>
+  </div>
+</div></section>
+
+<section class="final">
+<div class="orbits" aria-hidden="true"><div class="ring r1"><i></i><i></i><i></i><i></i></div><div class="ring r2"><i></i><i></i><i></i></div><div class="core"></div></div>
+<div class="wrap">
+  <h2 class="t">Try it in five minutes</h2>
+  <p class="sub" style="margin:0 auto">Add test funds. Give an agent $10.</p>
+  <div class="cta"><a class="btn accent lg" href="/app">Open dashboard</a><a class="btn lg" href="/docs#quickstart">Quickstart</a><a class="btn lg" href="/docs/checkout#quickstart">Accept agent payments</a></div>
+</div></section>
+</main>
+
+<footer class="foot"><div class="wrap">
+  <div><a class="brand" href="/" style="margin-bottom:8px"><span class="logo" aria-hidden="true"></span>Spendkit</a><br>Sandbox preview. Test money only.</div>
+  <div><a href="/docs">Docs</a><a href="/docs/checkout">Checkout</a><a href="/docs#agent-api">Agent API</a><a href="/docs#mcp">MCP</a><a href="/app#developers">Developers</a><a href="/app">Dashboard</a></div>
+</div></footer>
+<div id="msg" role="status" aria-live="polite"></div>
+<script src="/assets/home.js"></script>
+<script src="/assets/landing.js"></script>
+<script src="/assets/site.js"></script>
+<script src="/assets/docs.js"></script>
+</body>
+</html>

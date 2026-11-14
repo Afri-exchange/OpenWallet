@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" font-family="Helvetica, Arial, sans-serif">
+<defs>
+<marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="#374151"/></marker>
+</defs>
+<rect width="1200" height="560" fill="#fafaf9"/>
+<text x="40" y="44" font-size="24" font-weight="bold" fill="#1f2937">Spendkit: how it fits together</text>
+<text x="40" y="68" font-size="14" fill="#4b5563">Sandbox only.</text>
+
+<!-- clients -->
+<rect x="40" y="130" width="280" height="250" rx="10" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+<text x="60" y="164" font-size="18" font-weight="bold" fill="#1f2937">Clients</text>
+<text x="60" y="198" font-size="14" fill="#1f2937">Owner: dashboard or connect page</text>
+<text x="60" y="226" font-size="14" fill="#1f2937">Developer backend: product on our API</text>
+<text x="60" y="254" font-size="14" fill="#1f2937">Agent: MCP or REST, pays with a budget</text>
+<text x="60" y="282" font-size="14" fill="#1f2937">Merchant: checkouts, balance, payouts</text>
+<text x="60" y="350" font-size="13" fill="#4b5563">One token per role: uk_ dk_ ak_ mk_</text>
+
+<!-- service -->
+<rect x="440" y="130" width="320" height="250" rx="10" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
+<text x="460" y="164" font-size="18" font-weight="bold" fill="#1f2937">Spendkit service</text>
+<text x="460" y="188" font-size="13" fill="#4b5563">one Node process, 127.0.0.1:8787</text>
+<text x="460" y="226" font-size="14" fill="#1f2937">HTTP and MCP API</text>
+<text x="460" y="254" font-size="14" fill="#1f2937">AppService: KYC, limits, pay, checkout</text>
+<text x="460" y="282" font-size="14" fill="#1f2937">Deposit watcher, payout sender</text>
+<text x="460" y="310" font-size="14" fill="#1f2937">Ledger: every cent has two sides</text>
+
+<!-- postgres -->
+<rect x="440" y="440" width="320" height="80" rx="10" fill="#f3f4f6" stroke="#374151" stroke-width="2"/>
+<text x="460" y="474" font-size="16" font-weight="bold" fill="#1f2937">Postgres</text>
+<text x="460" y="498" font-size="13" fill="#4b5563">ledger, users, cards, spends, checkouts</text>
+
+<!-- miden -->
+<rect x="880" y="130" width="280" height="110" rx="10" fill="#ffedd5" stroke="#ea580c" stroke-width="2"/>
+<text x="900" y="164" font-size="18" font-weight="bold" fill="#1f2937">Miden Workspace API</text>
+<text x="900" y="192" font-size="14" fill="#1f2937">KYC, cards, top-ups,</text>
+<text x="900" y="214" font-size="14" fill="#1f2937">simulated card charges</text>
+
+<!-- base -->
+<rect x="880" y="270" width="280" height="110" rx="10" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/>
+<text x="900" y="304" font-size="18" font-weight="bold" fill="#1f2937">Base Sepolia (USDC)</text>
+<text x="900" y="332" font-size="14" fill="#1f2937">Deposits in, merchant</text>
+<text x="900" y="354" font-size="14" fill="#1f2937">payouts out</text>
+
+<!-- arrows -->
+<line x1="320" y1="255" x2="438" y2="255" stroke="#374151" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="379" y="244" font-size="13" fill="#374151" text-anchor="middle">HTTPS</text>
+
+<line x1="760" y1="185" x2="878" y2="185" stroke="#374151" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="819" y="174" font-size="13" fill="#374151" text-anchor="middle">cards</text>
+
+<line x1="878" y1="300" x2="762" y2="300" stroke="#374151" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="819" y="289" font-size="13" fill="#374151" text-anchor="middle">deposits</text>
+
+<line x1="762" y1="350" x2="878" y2="350" stroke="#374151" stroke-width="2.5" marker-end="url(#a)"/>
+<text x="819" y="340" font-size="13" fill="#374151" text-anchor="middle">payouts</text>
+
+<line x1="600" y1="382" x2="600" y2="438" stroke="#374151" stroke-width="2.5" marker-start="url(#a)" marker-end="url(#a)"/>
+</svg>

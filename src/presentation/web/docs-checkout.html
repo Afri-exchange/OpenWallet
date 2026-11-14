@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Spendkit Checkout documentation: let AI agents pay your checkout. Quickstart, SDK, statuses, payouts and the merchant HTTP API.">
+<title>Checkout docs · Spendkit</title>
+<link rel="stylesheet" href="/assets/site.css">
+<style>
+  .docs{display:grid;grid-template-columns:260px minmax(0,1fr);gap:48px;align-items:start;padding-top:32px}
+  @media (max-width:900px){.docs{grid-template-columns:minmax(0,1fr);gap:20px}}
+  #side{position:sticky;top:calc(var(--nav-h) + 20px);max-height:calc(100vh - var(--nav-h) - 40px);overflow:auto;padding-right:6px;font-size:14px}
+  @media (max-width:900px){#side{position:static;max-height:none}#side .tree{display:none}#side:focus-within .tree,#side.open .tree{display:block}}
+  #side ul{list-style:none;margin:0;padding:0} #side li[hidden]{display:none}
+  #side .tree>li>a{font-weight:600;color:var(--ink);margin-top:10px}
+  #side a{display:block;padding:5px 10px;border-radius:7px;color:var(--ink2);text-decoration:none;border-left:2px solid transparent}
+  #side .sub a{padding-left:22px;font-size:13.5px;color:var(--muted)}
+  #side a:hover{background:var(--bg2);color:var(--ink)}
+  #side a[aria-current]{color:var(--accent);background:var(--accent-soft);border-left-color:var(--accent)}
+  .search{position:relative;margin-bottom:8px}
+  .search input{padding-right:34px}
+  .search kbd{position:absolute;right:9px;top:50%;transform:translateY(-50%);font-size:11px;border:1px solid var(--line2);border-radius:5px;padding:1px 6px;color:var(--muted);pointer-events:none}
+  .products{display:flex;gap:4px;padding:3px;border:1px solid var(--line);border-radius:10px;background:var(--surface);margin-bottom:12px}
+  .products a{flex:1;text-align:center;padding:6px 8px;border-radius:7px;color:var(--ink2);text-decoration:none;font-weight:600;font-size:13.5px}
+  .products a[aria-current]{background:var(--accent-soft);color:var(--accent)}
+  article{min-width:0;max-width:760px}
+  article h1{font-size:clamp(32px,4.5vw,46px);letter-spacing:-.035em;margin-bottom:14px}
+  article h2{font-size:28px;margin:64px 0 14px;padding-top:28px;border-top:1px solid var(--line)}
+  article h2:first-of-type{margin-top:36px}
+  article h3{font-size:19px;margin:34px 0 10px}
+  article p,article li{color:var(--ink2)} article li{margin:4px 0}
+  article ul,article ol{padding-left:22px;margin:0 0 1em}
+  .lead{font-size:18px;color:var(--ink2)}
+  .ep{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0 12px;font-family:var(--mono);font-size:14px}
+  .m{font:700 11px var(--mono);padding:3px 8px;border-radius:6px;letter-spacing:.04em}
+  .m.get{background:var(--ok-soft);color:var(--ok)} .m.post{background:var(--accent-soft);color:var(--accent)}
+  .note{border:1px solid var(--line);border-left:3px solid var(--accent);background:var(--surface);border-radius:var(--r-sm);padding:12px 16px;margin:0 0 1.2em;color:var(--ink2)}
+  .note.warn{border-left-color:var(--warn)} .note p:last-child{margin:0}
+  .tw{border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);margin:0 0 1.4em}
+  .tw table{min-width:520px} .tw td,.tw th{white-space:normal;vertical-align:top} .tw td:first-child{white-space:nowrap}
+  .steps5{counter-reset:q;list-style:none;padding:0}
+  .steps5>li{counter-increment:q;position:relative;padding:0 0 22px 46px}
+  .steps5>li::before{content:counter(q);position:absolute;left:0;top:0;width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font:700 14px var(--display);background:var(--accent-soft);color:var(--accent)}
+  .steps5 h3{margin:2px 0 6px;font-size:17px}
+</style>
+</head>
+<body>
+<a class="skip" href="#content">Skip to content</a>
+<header class="nav"><div class="wrap">
+  <a class="brand" href="/"><span class="logo" aria-hidden="true"></span>Spendkit</a>
+  <nav class="nav-links" aria-label="Main"><a class="keep" href="/docs">Docs</a><a href="/app#developers">Developers</a></nav>
+  <span class="spacer"></span>
+  <button class="icon-btn" type="button" data-theme-toggle aria-label="Toggle theme"></button>
+  <a class="btn primary sm" href="/app">Open dashboard</a>
+</div></header>
+
+<div class="wrap docs">
+<nav id="side" aria-label="Documentation">
+  <div class="products" role="group" aria-label="Product"><a href="/docs">Spendkit</a><a href="/docs/checkout" aria-current="page">Checkout</a></div>
+  <div class="search"><label class="sr" for="q">Search the docs</label><input id="q" type="search" placeholder="Search checkout docs" autocomplete="off"><kbd>/</kbd></div>
+  <ul class="tree">
+    <li data-k="overview about"><a href="#intro">Introduction</a></li>
+    <li data-k="start tutorial setup keys signup"><a href="#quickstart">Quickstart</a></li>
+    <li data-k="flow agent merchant"><a href="#how">How it works</a></li>
+    <li data-k="open processing paid canceled expired state"><a href="#statuses">Checkout statuses</a></li>
+    <li data-k="server mk secret create"><a href="#merchant">Merchant SDK</a></li>
+    <li class="sub" data-k="button meta html"><a href="#page">On your page</a></li>
+    <li class="sub" data-k="poll wait fulfil"><a href="#fulfil">Fulfilling orders</a></li>
+    <li data-k="balance payout usdc address"><a href="#payouts">Getting paid</a></li>
+    <li data-k="mcp pay_checkout ak agent"><a href="#agent">Agent side</a></li>
+    <li data-k="rest endpoints http"><a href="#api">HTTP API</a></li>
+    <li data-k="retry duplicate key"><a href="#idempotency">Idempotency</a></li>
+    <li data-k="400 401 404 409 status"><a href="#errors">Errors</a></li>
+    <li data-k="safe security http key rotate"><a href="#security">Security</a></li>
+    <li data-k="webhook refund bank mainnet roadmap"><a href="#notyet">Not yet</a></li>
+  </ul>
+  <p id="none" class="muted small" hidden style="padding:8px 10px">No matches.</p>
+</nav>
+
+<article id="content">
+<h1 id="intro">Spendkit Checkout</h1>
+<p class="lead">Let AI agents pay you. You set the price; the agent pays from the wallet its owner funded, inside the limits its owner set. No card details ever reach the agent or you.</p>
+<div class="note warn"><p><b>Sandbox only.</b> The agent's card is charged through Miden's sandbox purchase simulator, and payouts are testnet USDC. Examples use this server's address (<code>&lt;origin&gt;</code>). The SDK is <code>@agent-cards/checkout</code> (<code>sdk/checkout</code> in the repo): no dependencies, not on npm yet, so import it by path.</p></div>
+<div class="grid g3" style="margin:24px 0">
+  <a class="card flat" href="#quickstart" style="text-decoration:none;color:inherit"><h3 style="font-size:16px;margin:0 0 6px">Quickstart</h3><span class="muted small">Keys to first paid checkout.</span></a>
+  <a class="card flat" href="#merchant" style="text-decoration:none;color:inherit"><h3 style="font-size:16px;margin:0 0 6px">Merchant SDK</h3><span class="muted small">Create checkouts, fulfil orders.</span></a>
+  <a class="card flat" href="#api" style="text-decoration:none;color:inherit"><h3 style="font-size:16px;margin:0 0 6px">HTTP API</h3><span class="muted small">Every merchant and agent endpoint.</span></a>
+</div>
+
+<h2 id="quickstart">Quickstart</h2>
+<ol class="steps5">
+<li><h3>Get sandbox keys</h3><p>With the service running, one command in the repo creates a merchant secret key (<code>mk_…</code>), a funded test agent token (<code>ak_…</code>) and pays a $1 test checkout. Keys go to the git-ignored <code>.env.sandbox-keys</code>; nothing secret is printed.</p>
+<div class="code" data-lang="shell"><pre>scripts/sandbox-up.sh
+node --import tsx scripts/dev-quickstart.ts</pre></div>
+<p>Or create just a merchant by hand. The secret key is shown once; keep it server side.</p>
+<div class="code" data-lang="shell"><pre>curl -s <span class="s">&lt;origin&gt;/merchant/v1/signup</span> -H <span class="s">"content-type: application/json"</span> \
+  -d <span class="s">'{"name":"Acme API","email":"billing@acme.example","mcc":"5734"}'</span></pre></div></li>
+<li><h3>Create a checkout</h3>
+<div class="code" data-lang="ts"><pre><span class="k">import</span> { AgentCardsCheckout } <span class="k">from</span> <span class="s">"./sdk/checkout/src/index.ts"</span>;
+
+<span class="k">const</span> checkout = <span class="k">new</span> AgentCardsCheckout({
+  baseUrl: process.env.AGENT_CARDS_URL!,
+  secretKey: process.env.AGENT_CARDS_SECRET_KEY!,
+});
+<span class="k">const</span> c = <span class="k">await</span> checkout.createCheckout({
+  amountCents: <span class="n">1299</span>,
+  description: <span class="s">"Pro plan, 1 month"</span>,
+  reference: <span class="s">"order_8812"</span>,
+  idempotencyKey: <span class="s">"order_8812"</span>,
+});
+console.log(c.checkoutUrl);   <span class="s">// hand this (or c.checkoutId) to the agent</span></pre></div></li>
+<li><h3>Let an agent pay it</h3><p>A real agent calls the MCP tool <code>pay_checkout</code>. To try it without one, use the test agent token:</p>
+<div class="code" data-lang="ts"><pre><span class="k">const</span> agent = <span class="k">new</span> AgentCardsAgent({ baseUrl, token: process.env.AGENT_CARDS_AGENT_TOKEN! });
+<span class="k">await</span> agent.payCheckout(c.checkoutId, { maxAmountCents: <span class="n">1299</span> });</pre></div></li>
+<li><h3>Fulfil when paid</h3>
+<div class="code" data-lang="ts"><pre><span class="k">const</span> done = <span class="k">await</span> checkout.waitForPayment(c.checkoutId, { timeoutMs: <span class="n">120_000</span> });
+<span class="k">if</span> (done.status === <span class="s">"paid"</span>) fulfil(done.reference);</pre></div></li>
+</ol>
+<p>A complete merchant (cart, server-side pricing, order page, polling, cancel) is in <code>examples/shop</code>. Run it with <code>node --env-file=../../.env.sandbox-keys --import tsx server.ts</code>.</p>
+
+<h2 id="how">How it works</h2>
+<ol>
+<li>Your server creates a checkout with your secret key and gets a <code>checkoutId</code> (<code>cs_…</code>) and a <code>checkoutUrl</code> (<code>&lt;origin&gt;/pay/cs_…</code>).</li>
+<li>You hand either one to the agent: put it on the page, return it from your API, or say it in a chat.</li>
+<li>The agent calls <code>pay_checkout</code> (MCP) or <code>POST /agent/v1/checkouts/&lt;id&gt;/pay</code>. Its owner's per-payment, daily and merchant-category limits and its balance all apply.</li>
+<li>You fulfil the order once the checkout reads <code>paid</code>.</li>
+</ol>
+<p>A checkout is paid at most once. If a payment is declined (limits, balance, or the card network), the checkout stays <code>open</code> and the agent can try again later.</p>
+<div class="note"><p>Spendkit is the merchant of record: each paid checkout is credited to your balance with us, and you are paid out from it. Neither you nor the agent ever sees card details.</p></div>
+
+<h2 id="statuses">Checkout statuses</h2>
+<div class="tw scroll"><table><thead><tr><th>Status</th><th>Meaning</th><th>What to do</th></tr></thead><tbody>
+<tr><td><span class="badge accent">open</span></td><td>Waiting for an agent to pay.</td><td>Wait, or cancel.</td></tr>
+<tr><td><span class="badge warn">processing</span></td><td>An agent's payment is under way, or the card network's answer is late and it settles in the background.</td><td><b>Do not fulfil yet.</b></td></tr>
+<tr><td><span class="badge ok">paid</span></td><td>Paid.</td><td>Fulfil the order.</td></tr>
+<tr><td><span class="badge">canceled</span></td><td>You canceled it (open checkouts only).</td><td>Nothing.</td></tr>
+<tr><td><span class="badge">expired</span></td><td>Nobody paid in time (default 30 minutes).</td><td>Create a new one.</td></tr>
+</tbody></table></div>
+
+<h2 id="merchant">Merchant SDK</h2>
+<p>Server side only. <code>AgentCardsCheckout</code> methods:</p>
+<div class="tw scroll"><table><thead><tr><th>Method</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>AgentCardsCheckout.signup(opts, {name, email, mcc?})</code></td><td>Creates a merchant account; returns the secret key once.</td></tr>
+<tr><td><code>createCheckout(params)</code></td><td>Fixed-price checkout. Params: <code>amountCents</code>, <code>description</code>, <code>reference?</code> (your order id, echoed back), <code>mcc?</code>, <code>expiresInSeconds?</code>, <code>metadata?</code> (yours only, never shown to agents), <code>idempotencyKey?</code>.</td></tr>
+<tr><td><code>retrieveCheckout(id)</code></td><td>The source of truth for whether you were paid.</td></tr>
+<tr><td><code>waitForPayment(id, {timeoutMs?, intervalMs?, signal?})</code></td><td>Polls until paid, canceled or expired. If time runs out it returns the checkout as it is: check <code>status</code>.</td></tr>
+<tr><td><code>listCheckouts({limit?})</code>, <code>cancelCheckout(id)</code></td><td>Newest first; cancel works on <code>open</code> only.</td></tr>
+<tr><td><code>me()</code>, <code>rotateKey()</code></td><td>Your profile; replace the secret key (the old one stops at once).</td></tr>
+<tr><td><code>balance()</code>, <code>setPayoutAddress(a)</code>, <code>requestPayout(p)</code>, <code>listPayouts()</code></td><td>See <a href="#payouts">Getting paid</a>.</td></tr>
+</tbody></table></div>
+
+<h3 id="page">On your page</h3>
+<p>Server-rendered helpers, no script needed:</p>
+<div class="code" data-lang="ts"><pre>html.head += checkoutMetaTag(c);   <span class="s">// lets an agent reading the page find the checkout</span>
+html.body += checkoutButton(c);    <span class="s">// "Pay $12.99 with Agent Card"</span></pre></div>
+
+<h3 id="fulfil">Fulfilling orders</h3>
+<ul>
+<li><b>Fulfil only when <code>status === "paid"</code></b> from <code>retrieveCheckout</code> or <code>waitForPayment</code>, and only once. Check <code>underReview</code> is empty too.</li>
+<li>Price on your server; never take an amount from the browser.</li>
+<li>Webhooks are not available yet: poll.</li>
+</ul>
+
+<h2 id="payouts">Getting paid</h2>
+<p>Each paid checkout is credited to your balance with us. Payouts are <b>USDC on Base Sepolia</b> (testnet) for now; bank transfers will follow.</p>
+<div class="code" data-lang="ts"><pre><span class="k">await</span> checkout.setPayoutAddress(<span class="s">"0xYourWallet…"</span>);   <span class="s">// once; a new address waits before it can be paid</span>
+<span class="k">const</span> { availableCents } = <span class="k">await</span> checkout.balance();
+<span class="k">const</span> payout = <span class="k">await</span> checkout.requestPayout({ amountCents: availableCents, idempotencyKey: <span class="s">"payout-2026-10"</span> });
+<span class="s">// payout.status: "requested" → "sending" (payout.txHash) → "sent", or "failed" (money returns to your balance)</span></pre></div>
+<ul>
+<li>A payout is reserved from your balance the moment you ask, so it can never be paid twice or exceed what you are owed (409 if it would).</li>
+<li>It goes to the address you had when you asked; changing the address later does not redirect it.</li>
+<li>A new address can be paid only after a waiting period (<code>me().payoutAddressUsableFrom</code>; 10 minutes in the sandbox), so a stolen secret key cannot send your money elsewhere at once.</li>
+</ul>
+
+<h2 id="agent">Agent side</h2>
+<p>With the Spendkit MCP server connected (see <a href="/docs#mcp">Spendkit · MCP</a>), an agent has two checkout tools:</p>
+<div class="tw scroll"><table><thead><tr><th>Tool</th><th>Arguments</th><th>Returns</th></tr></thead><tbody>
+<tr><td><code>get_checkout</code></td><td><code>checkout_id</code></td><td>Merchant, description, price and status.</td></tr>
+<tr><td><code>pay_checkout</code></td><td><code>checkout_id</code></td><td>Pays at the merchant's price. Calling it again returns the first result.</td></tr>
+</tbody></table></div>
+<p>Agents without MCP can use <code>AgentCardsAgent</code> (<code>getCheckout</code> accepts an id or the link; <code>payCheckout(id, { maxAmountCents })</code> refuses a dearer checkout without charging) or the REST endpoints below. The payment is an ordinary agent payment, so the agent's limits, merchant-category allow-list and balance all apply (see <a href="/docs#statuses">Payments &amp; statuses</a>).</p>
+
+<h2 id="api">HTTP API</h2>
+<p>Every POST needs <code>content-type: application/json</code>. Amounts are US cents. <code>mk_</code> = merchant secret key, <code>ak_</code> = agent token, sent as <code>Authorization: Bearer …</code>.</p>
+<div class="tw scroll"><table><thead><tr><th>Endpoint</th><th>Auth</th><th>Notes</th></tr></thead><tbody>
+<tr><td><span class="m post">POST</span> <code>/merchant/v1/signup</code></td><td>none</td><td><code>{name, email, mcc?}</code> → <code>{merchantId, name, secretKey}</code></td></tr>
+<tr><td><span class="m get">GET</span> <code>/merchant/v1/me</code></td><td><code>mk_</code></td><td>Profile</td></tr>
+<tr><td><span class="m post">POST</span> <code>/merchant/v1/key</code></td><td><code>mk_</code></td><td>New secret key; the old one stops working</td></tr>
+<tr><td><span class="m post">POST</span> <code>/merchant/v1/checkouts</code></td><td><code>mk_</code></td><td><code>{amountCents, description, reference?, mcc?, expiresInSeconds?, metadata?, idempotencyKey?}</code> → 201</td></tr>
+<tr><td><span class="m get">GET</span> <code>/merchant/v1/checkouts[?limit=]</code></td><td><code>mk_</code></td><td>Newest first</td></tr>
+<tr><td><span class="m get">GET</span> <code>/merchant/v1/checkouts/{id}</code></td><td><code>mk_</code></td><td></td></tr>
+<tr><td><span class="m post">POST</span> <code>/merchant/v1/checkouts/{id}/cancel</code></td><td><code>mk_</code></td><td>Open only, else 409</td></tr>
+<tr><td><span class="m post">POST</span> <code>/merchant/v1/payout-address</code></td><td><code>mk_</code></td><td><code>{address}</code> → profile with <code>payoutAddressUsableFrom</code></td></tr>
+<tr><td><span class="m get">GET</span> <code>/merchant/v1/balance</code></td><td><code>mk_</code></td><td><code>{availableCents, pendingPayoutCents, currency}</code></td></tr>
+<tr><td><span class="m post">POST</span> <code>/merchant/v1/payouts</code></td><td><code>mk_</code></td><td><code>{amountCents, idempotencyKey?}</code> → 201. 409 if over the available balance, no address set, or during an address change's wait</td></tr>
+<tr><td><span class="m get">GET</span> <code>/merchant/v1/payouts[?limit=]</code></td><td><code>mk_</code></td><td>Newest first</td></tr>
+<tr><td><span class="m get">GET</span> <code>/agent/v1/checkouts/{id}</code></td><td><code>ak_</code></td><td>Public view</td></tr>
+<tr><td><span class="m post">POST</span> <code>/agent/v1/checkouts/{id}/pay</code></td><td><code>ak_</code></td><td><code>{}</code> or <code>{maxAmountCents}</code> → <code>{checkout, payment}</code></td></tr>
+<tr><td><span class="m get">GET</span> <code>/pay/{id}</code></td><td>none</td><td>Human- and agent-readable page</td></tr>
+<tr><td><span class="m get">GET</span> <code>/v1/checkouts/{id}</code></td><td>none</td><td>Public view as JSON</td></tr>
+</tbody></table></div>
+
+<h2 id="idempotency">Idempotency</h2>
+<ul>
+<li><b>Creating:</b> send an <code>idempotencyKey</code> on <code>createCheckout</code> (your order id works). A retry returns the same checkout instead of making a second one.</li>
+<li><b>Paying:</b> a checkout is paid at most once. Calling <code>pay_checkout</code> again returns the first result, and the same attempt is never charged twice. A declined attempt can be retried later as a new attempt.</li>
+<li><b>Payouts:</b> send an <code>idempotencyKey</code> on <code>requestPayout</code> so a retry never asks twice.</li>
+</ul>
+
+<h2 id="errors">Errors</h2>
+<p>Errors are JSON: <code>{ "error": "message" }</code>. The SDK throws <code>AgentCardsError</code> with <code>status</code> and <code>message</code>. See also <a href="/docs#errors">Spendkit · Errors</a>.</p>
+<div class="tw scroll"><table><thead><tr><th>Status</th><th>Typical cause here</th></tr></thead><tbody>
+<tr><td>400</td><td>Missing or invalid field, amount not a positive whole number of cents.</td></tr>
+<tr><td>401</td><td>Missing, wrong, rotated or revoked key; or the wrong kind (<code>mk_</code> vs <code>ak_</code>).</td></tr>
+<tr><td>404</td><td>Unknown checkout or payout.</td></tr>
+<tr><td>409</td><td>Cancel on a checkout that is not open; idempotency key reused for a different request; payout over the balance, with no address, or during an address change's wait.</td></tr>
+</tbody></table></div>
+<p>A declined payment is not an HTTP error: <code>payCheckout</code> returns a <code>payment</code> with <code>status: "declined"</code> and a <code>reason</code>, and the checkout stays <code>open</code>.</p>
+
+<h2 id="security">Security</h2>
+<ul>
+<li>The secret key (<code>mk_…</code>) stays on your server. Never ship it to a browser or an agent. Rotate it with <code>rotateKey()</code> if it leaks.</li>
+<li>The SDK refuses to send a key over plain <code>http</code> to anything but localhost.</li>
+<li>Pass <code>maxAmountCents</code> from the agent so a checkout whose price changed is refused without charging.</li>
+<li>Never trust the browser's idea of the price or of "paid": re-read the checkout from your server.</li>
+</ul>
+
+<h2 id="notyet">Not yet</h2>
+<ul>
+<li><b>Bank payouts and mainnet USDC.</b> Testnet USDC only for now.</li>
+<li><b>Webhooks.</b> Poll with <code>retrieveCheckout</code> or <code>waitForPayment</code>.</li>
+<li><b>Refunds.</b> There is no refund API yet.</li>
+<li><b>Real merchants.</b> Merchant signup is unverified and the charge is Miden's sandbox simulator.</li>
+</ul>
+</article>
+</div>
+
+<footer class="foot"><div class="wrap">
+  <div><a class="brand" href="/" style="margin-bottom:8px"><span class="logo" aria-hidden="true"></span>Spendkit</a><br>Sandbox preview. Test money only.</div>
+  <div><a href="/">Product</a><a href="/docs">Docs</a><a href="/docs/checkout">Checkout docs</a><a href="/app#developers">Developers</a><a href="/app">Dashboard</a></div>
+</div></footer>
+<div id="msg" role="status" aria-live="polite"></div>
+<script src="/assets/site.js"></script>
+<script src="/assets/docs.js"></script>
+</body>
+</html>

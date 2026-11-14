@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Spendkit: demo</title>
+<style>
+*{box-sizing:border-box;margin:0}
+html,body{height:100%;background:#0e1117;color:#e8ebf2;font:20px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;overflow:hidden}
+.slide{position:absolute;inset:0;padding:6vh 8vw;display:none;flex-direction:column;justify-content:center;gap:2.2vh}
+.slide.on{display:flex}
+h1{font-size:3.4em;line-height:1.1;letter-spacing:-.02em}
+h2{font-size:2.1em;letter-spacing:-.01em}
+.kick{color:#7cc4ff;font-size:.7em;letter-spacing:.14em;text-transform:uppercase;font-weight:600}
+.sub{color:#9aa3b8;font-size:1.1em;max-width:34em}
+ul{list-style:none;display:flex;flex-direction:column;gap:1.3vh;max-width:36em}
+li{padding-left:1.2em;position:relative}
+li:before{content:"";position:absolute;left:0;top:.65em;width:.5em;height:.5em;border-radius:50%;background:#7cc4ff}
+b{color:#fff}
+code,pre{font:.72em ui-monospace,Menlo,monospace}
+pre{background:#171b24;border:1px solid #262c3a;border-radius:12px;padding:1.2em 1.4em;color:#cfd6e6;white-space:pre-wrap;max-width:46em}
+.flow{display:flex;align-items:stretch;gap:1.2vw;flex-wrap:wrap;margin-top:1vh}
+.box{background:#171b24;border:1px solid #262c3a;border-radius:14px;padding:1.1em 1.3em;min-width:12em;flex:1}
+.box small{display:block;color:#9aa3b8;font-size:.62em;margin-top:.4em}
+.box strong{color:#7cc4ff}
+.arrow{align-self:center;color:#4a5268;font-size:1.6em}
+.ok{color:#6fd39a}.bad{color:#ff8a8f}
+.row{display:flex;gap:1.5vw;flex-wrap:wrap}
+.pill{background:#171b24;border:1px solid #262c3a;border-radius:999px;padding:.35em 1em;font-size:.8em;color:#b9c0d0}
+.foot{position:fixed;bottom:2.5vh;left:8vw;right:8vw;display:flex;justify-content:space-between;color:#5b6479;font-size:.6em}
+</style></head><body>
+
+<section class="slide on">
+  <div class="kick">Spendkit · sandbox demo</div>
+  <h1>Give your AI agent<br>a card it can't overspend.</h1>
+  <p class="sub">A developer ships a shopping agent. Their users verify once, fund a card, and stay in control of what the agent can buy.</p>
+</section>
+
+<section class="slide">
+  <div class="kick">The problem</div>
+  <h2>Agents need to pay. Nobody wants to hand over a card.</h2>
+  <ul>
+    <li>Sharing your own card with an agent means <b>unlimited exposure</b>.</li>
+    <li>An agent can't pass KYC, so it can't hold a card itself.</li>
+    <li>Developers don't want to build identity checks, wallets and spend controls from scratch.</li>
+  </ul>
+</section>
+
+<section class="slide">
+  <div class="kick">How it works</div>
+  <h2>One person, one verified card, many limited agents.</h2>
+  <div class="flow">
+    <div class="box"><strong>Developer</strong>creates users and agents from their server<small>dk_ key · /developer/v1</small></div>
+    <div class="arrow">→</div>
+    <div class="box"><strong>User</strong>passes KYC once, funds the card, sets limits<small>hosted /connect page</small></div>
+    <div class="arrow">→</div>
+    <div class="box"><strong>Agent</strong>pays within its budget<small>ak_ token · MCP or REST</small></div>
+  </div>
+  <p class="sub">The agent never sees card details and never does KYC. The user's money is split into per-agent sub-balances.</p>
+</section>
+
+<section class="slide">
+  <div class="kick">Step 1 · Developer</div>
+  <h2>Create a user and send them to the hosted page.</h2>
+<pre>POST /developer/v1/users            {"externalId":"guest-1","email":"..."}
+POST /developer/v1/users/:id/sessions
+→ https://…/connect#session=us_…</pre>
+  <p class="sub">The session lives in the URL fragment, so it never reaches a server log. Nothing to build for KYC or spend controls.</p>
+</section>
+
+<section class="slide">
+  <div class="kick">Step 2 · User</div>
+  <h2>Verify once. Get a real Visa card.</h2>
+  <ul>
+    <li>KYC runs through Miden. Approval issues a Visa card and a USDC deposit address.</li>
+    <li>Send USDC to that address and it is credited and moved onto the card.</li>
+    <li>The developer is told by signed webhooks: <code>kyc.updated</code>, <code>card.issued</code>, <code>funding.completed</code>.</li>
+  </ul>
+</section>
+
+<section class="slide">
+  <div class="kick">Step 3 · Agent</div>
+  <h2>Create the shopping agent, with limits.</h2>
+<pre>POST /developer/v1/users/:id/agents
+{"name":"shopper","perTransactionCents":2000,
+ "dailyCents":10000,"allowedMccs":["5734","5815"]}
+→ {"agentId":"a_…","token":"ak_…"}
+
+POST …/agents/:id/fund   {"amountCents":5000}</pre>
+  <p class="sub">$20 per payment, $100 a day, software and digital goods only.</p>
+</section>
+
+<section class="slide">
+  <div class="kick">Live result from this machine</div>
+  <h2>The agent pays over MCP.</h2>
+<pre>get_wallet → balance $20.00, $20 per payment, $100/day
+pay $0.50 at "MCP Demo Store" (MCC 5734)
+→ status: <span class="ok">approved</span></pre>
+  <p class="sub">Run for real against the Miden sandbox today.</p>
+</section>
+
+<section class="slide">
+  <div class="kick">Live result from this machine</div>
+  <h2>The limits hold.</h2>
+<pre>$1.50 over the per-payment limit      <span class="bad">declined</span>  per-transaction limit exceeded
+$1.00 at a retail category            <span class="bad">declined</span>  merchant category not allowed
+limit above the card's tier           <span class="bad">refused</span>   server says which limit
+$1.00 at an allowed category          <span class="ok">approved</span>
+same idempotency key again            <span class="ok">approved</span>  first result; no double charge
+revoke the agent → old token          401</pre>
+</section>
+
+<section class="slide">
+  <div class="kick">Optional</div>
+  <h2>Privacy mode: a fresh card per payment.</h2>
+  <ul>
+    <li>Every payment uses a <b>one-time card</b> for exactly that amount.</li>
+    <li>A merchant never sees a card number that works twice, and purchases can't be linked.</li>
+    <li>Limits, balances and idempotency behave the same. If a card can't be made, nothing is charged.</li>
+  </ul>
+</section>
+
+<section class="slide">
+  <div class="kick">Be upfront</div>
+  <h2>What this is today.</h2>
+  <ul>
+    <li><b>Sandbox only.</b> The service refuses to start against a non-sandbox Miden URL. No real money moves.</li>
+    <li>The demo uses a <b>dummy identity</b> and a <b>simulated USDC deposit</b> as shortcuts. Real users do both on /connect.</li>
+    <li>Privacy mode is capped by Miden at 3 cards per customer in the sandbox.</li>
+    <li>Not production-ready yet; see <code>docs/production-gaps.md</code>.</li>
+  </ul>
+</section>
+
+<section class="slide">
+  <div class="kick">Try it</div>
+  <h2>Three commands.</h2>
+<pre>scripts/sandbox-up.sh
+node --import tsx examples/developer/01-onboard.ts
+node --env-file=examples/developer/.env.developer-demo \
+     --import tsx examples/developer/agent-mcp.ts</pre>
+  <p class="sub">Dashboard: http://127.0.0.1:8787/app</p>
+</section>
+
+<div class="foot"><span>Spendkit · sandbox</span><span id="n"></span></div>
+<script>
+const s=[...document.querySelectorAll('.slide')];let i=0;
+const show=k=>{i=Math.max(0,Math.min(s.length-1,k));s.forEach((e,j)=>e.classList.toggle('on',j===i));document.getElementById('n').textContent=(i+1)+' / '+s.length;location.hash=i+1};
+addEventListener('keydown',e=>{if(['ArrowRight','PageDown',' ','Enter'].includes(e.key)){e.preventDefault();show(i+1)}if(['ArrowLeft','PageUp','Backspace'].includes(e.key)){e.preventDefault();show(i-1)}if(e.key==='f')document.documentElement.requestFullscreen?.()});
+addEventListener('click',e=>show(e.clientX>innerWidth/2?i+1:i-1));
+show((parseInt(location.hash.slice(1))||1)-1);
+</script>
+</body></html>
