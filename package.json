@@ -16,7 +16,9 @@
     "node": ">=20"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
@@ -35,11 +37,11 @@
     "db:check": "tsx --test test/db-schema.test.ts"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^26.6.6",
     "@types/pg": "^8.23.1",
     "drizzle-kit": "0.31.11",
     "tsx": "^4.19.0",
-    "typescript": "^5.6.0"
+    "typescript": "^7.0.2"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",

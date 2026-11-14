@@ -164,7 +164,7 @@ test("adaptive, model: odd labels without a planner are refused before typing; w
   const steps: string[] = [];
   let frames = 0;
   const r = await pay(filler(planner), "untagged", 500, 500, { step: (l) => steps.push(l), frame: () => frames++ });
-  assert.deepEqual([r.outcome, r.submitted], ["succeeded", true], r.detail);
+  assert.deepEqual([r.outcome, r.submitted], ["succeeded", true], r.detail ?? "");
   const sub = fx.submissions.at(-1)!;
   assert.deepEqual([sub.last4, sub.exp, sub.terms, sub.newsletter], ["4242", "12/2030", true, false], "terms ticked, newsletter never");
   assert.equal(planner.calls.length, 1);
@@ -178,7 +178,7 @@ test("adaptive, model: odd labels without a planner are refused before typing; w
 test("adaptive, model: a multi-step checkout is walked, the price checked again, then paid", { skip }, async () => {
   const planner = new ScriptedPlanner(honest);
   const r = await pay(filler(planner), "multistep");
-  assert.deepEqual([r.outcome, r.submitted], ["succeeded", true], r.detail);
+  assert.deepEqual([r.outcome, r.submitted], ["succeeded", true], r.detail ?? "");
   assert.equal(planner.calls.length, 2);
   assert.equal(planner.calls[1]!.round, 2);
 });
