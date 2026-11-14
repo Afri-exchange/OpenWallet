@@ -1,0 +1,10 @@
+{
+  "name": "agent-cards-example-trial-guard",
+  "private": true,
+  "type": "module",
+  "description": "An agent signs up for free trials with one-time cards, so no trial can bill you after it ends",
+  "scripts": {
+    "setup": "node --import tsx setup.ts",
+    "start": "node --import tsx server.ts"
+  }
+}

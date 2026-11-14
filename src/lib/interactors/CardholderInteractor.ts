@@ -638,9 +638,10 @@ export class CardholderInteractor {
    * call, so the same spend never gets two cards and a crash mid-issue is flagged, not guessed at.
    * Throws an AgentCardsError when no card could be made; the caller then undoes the debit (nothing was charged).
    * `needDetails`: also seal the card's details into the vault (a hosted-checkout fill needs them; the simulator does not).
+   * `forceOneTime`: a one-time card even outside privacy mode (a checkout on a host that is not on the swap allowlist).
    */
-  async chargeCardFor(p: AgentPrincipal, spendId: string, amountCents: number, opts: { needDetails: boolean }): Promise<string> {
-    if (!(await this.privacyMode(p.userId))) return p.cardId;
+  async chargeCardFor(p: AgentPrincipal, spendId: string, amountCents: number, opts: { needDetails: boolean; forceOneTime?: boolean }): Promise<string> {
+    if (!opts.forceOneTime && !(await this.privacyMode(p.userId))) return p.cardId;
     const prior = await this.d.oneTimeCards.findBySpend(spendId);
     if (prior?.status === "ready" && prior.cardId) return prior.cardId;
     // Miden loads at least $1 on a Lite card, so a smaller payment would park the rest of a dollar on a single-swipe card.

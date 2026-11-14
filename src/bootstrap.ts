@@ -3,6 +3,8 @@
 import pg from "pg";
 import { SealedCardVault, vaultKeyFromEnv } from "./adapters/cardVault/CardVault.js";
 import { RoutingFiller } from "./adapters/checkoutFillers/RoutingFiller.js";
+import { AdaptiveFiller } from "./adapters/checkoutFillers/AdaptiveFiller.js";
+import { ClaudeFormPlanner } from "./adapters/checkoutFillers/FormPlanner.js";
 import { BASE_SEPOLIA_USDC, ETHEREUM_SEPOLIA_USDC, jsonRpc } from "./adapters/deposits/BaseUsdcWatcher.js";
 import { CircleDeposits } from "./adapters/deposits/CircleDeposits.js";
 import { MidenWalletFunding } from "./adapters/funding/MidenWalletFunding.js";
@@ -123,11 +125,17 @@ export async function bootstrapApplication(env: NodeJS.ProcessEnv = process.env)
 
   // ----- hosted-checkout swaps: agents pay third-party hosted checkouts (Stripe) with the vaulted card. Off unless SWAP_ENABLED=1.
   const swapConfig = swapConfigFromEnv(env);
+  if (swapConfig.testHosts?.length && !swapConfig.stripeTestCard) throw new Error("SWAP_TEST_HOSTS needs SWAP_STRIPE_TEST_CARD=1 (sandbox only)");
+  // Unfamiliar checkout forms: read from their labels; with a key, a model maps the ones whose labels are not enough.
+  const aiPlanner = env.SWAP_AI_FILL !== "0" && env.ANTHROPIC_API_KEY ? new ClaudeFormPlanner(env.SWAP_AI_MODEL ? { model: env.SWAP_AI_MODEL } : {}) : undefined;
+  const adaptiveFiller = new AdaptiveFiller({ ...(aiPlanner ? { planner: aiPlanner } : {}), log });
   if (swapConfig.stripeTestCard && !sandbox) throw new Error("SWAP_STRIPE_TEST_CARD=1 is only allowed with the Miden sandbox");
   if (swapConfig.enabled && !vault) throw new Error("SWAP_ENABLED=1 needs CARD_VAULT_KEY");
   if (swapConfig.enabled && vault) {
     log(`checkout swap on: hosts ${swapConfig.allowedHosts.join(", ")}, cap $${(swapConfig.maxAmountCents / 100).toFixed(2)}`);
     if (swapConfig.stripeTestCard) log("checkout swap: SWAP_STRIPE_TEST_CARD=1, Stripe TEST-mode links are paid with Stripe's 4242 test card (sandbox only)");
+    if (swapConfig.testHosts?.length) log(`checkout swap: test shops paid with the 4242 test card: ${swapConfig.testHosts.join(", ")}`);
+    if (swapConfig.openHosts) log(`checkout swap: SWAP_OPEN_HOSTS=1, other public https checkouts are paid with a one-time card only; unfamiliar forms ${aiPlanner ? "are mapped from their labels, then by a model" : "are paid only when their labels are clear (no ANTHROPIC_API_KEY)"}`);
   }
   log(`payout account (Base Sepolia, fund with test USDC + ETH): ${payoutAccount.address}`);
 
@@ -146,7 +154,8 @@ export async function bootstrapApplication(env: NodeJS.ProcessEnv = process.env)
     isOwnAddress: async (a) => a === payoutAccount.address.toLowerCase() || (await addresses.cardFor(a)) !== undefined,
     payoutRail,
     swapConfig,
-    checkoutFiller: new RoutingFiller(),
+    // The adaptive filler only ever sees pages SwapInteractor let through: open hosts or test shops, on a one-time or test card.
+    checkoutFiller: swapConfig.openHosts || swapConfig.testHosts?.length ? RoutingFiller.withAdaptive(adaptiveFiller) : new RoutingFiller(),
     // Sandbox: developers may point webhooks at http://localhost. Real deployments (not sandbox) never do.
     allowLocalWebhooks: sandbox,
     sandbox,

@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Cards · Chat with a paying agent</title>
+<style>
+  :root {
+    --bg: #f6f7fb; --panel: #fff; --ink: #1a1f36; --muted: #6b7385; --line: #e3e6ef;
+    --accent: #635bff; --accent-ink: #fff; --ok: #0e8a5f; --bad: #c0392b; --warn: #b7791f;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif; color: var(--ink); background: var(--bg); -webkit-font-smoothing: antialiased; }
+  button { font: inherit; cursor: pointer; }
+  header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  .brand { font-weight: 650; letter-spacing: -0.01em; }
+  .brand small { font-weight: 500; color: var(--muted); margin-left: 6px; }
+  .pill { font-size: 12px; padding: 3px 9px; border-radius: 99px; background: #fff4e0; color: var(--warn); font-weight: 600; }
+  .wallet { margin-left: auto; display: flex; gap: 18px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .wallet b { color: var(--ink); font-weight: 600; }
+  main { display: grid; grid-template-columns: minmax(340px, 1fr) minmax(380px, 1.25fr); gap: 16px; padding: 16px; height: calc(100% - 57px); }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  .panel h2 { margin: 0; padding: 12px 16px; font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; }
+  .panel h2 .grow { flex: 1; }
+  .link { background: none; border: 0; color: var(--accent); font-size: 12px; text-transform: none; letter-spacing: 0; padding: 0; }
+
+  #log { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { max-width: 88%; padding: 10px 13px; border-radius: 14px; white-space: pre-wrap; word-wrap: break-word; }
+  .user { align-self: flex-end; background: var(--accent); color: var(--accent-ink); border-bottom-right-radius: 4px; }
+  .agent { align-self: flex-start; background: #f0f1f6; border-bottom-left-radius: 4px; }
+  .agent a { color: var(--accent); }
+  .tool { align-self: flex-start; font-size: 12.5px; color: var(--muted); display: flex; gap: 6px; align-items: baseline; padding: 0 4px; }
+  .tool code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink); background: #f0f1f6; padding: 1px 5px; border-radius: 5px; }
+  .tool.ok::before { content: "✓"; color: var(--ok); }
+  .tool.err::before { content: "✕"; color: var(--bad); }
+  .tool.run::before { content: "…"; }
+  .error { align-self: center; color: var(--bad); font-size: 13px; }
+  .typing { align-self: flex-start; color: var(--muted); font-size: 13px; padding: 0 4px; }
+  .typing::after { content: ""; animation: dots 1.2s steps(4) infinite; }
+  @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 16px 10px; }
+  .chip { border: 1px solid var(--line); background: #fff; border-radius: 99px; padding: 5px 11px; font-size: 13px; color: var(--ink); transition: border-color .15s, background-color .15s; }
+  .chip:hover { border-color: var(--accent); background: #f5f4ff; }
+  form.compose { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--line); }
+  form.compose input { flex: 1; font: inherit; padding: 11px 13px; border: 1px solid var(--line); border-radius: 10px; outline: none; }
+  form.compose input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px #635bff22; }
+  .btn { background: var(--accent); color: #fff; border: 0; border-radius: 10px; padding: 0 18px; font-weight: 600; transition: transform .1s, opacity .15s; }
+  .btn:active { transform: scale(0.97); }
+  .btn:disabled { opacity: .5; cursor: default; }
+
+  .stage { flex: 1; min-height: 0; display: grid; grid-template-rows: 1fr auto; }
+  .screen { position: relative; background: #0f1222; display: grid; place-items: center; overflow: hidden; min-height: 0; }
+  .screen img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+  .idle { color: #aab0c6; text-align: center; padding: 24px; max-width: 360px; }
+  .idle b { color: #fff; display: block; margin-bottom: 6px; font-size: 16px; }
+  .badge { position: absolute; top: 12px; left: 12px; background: #000a; color: #fff; padding: 5px 10px; border-radius: 99px; font-size: 12px; font-weight: 600; display: none; align-items: center; gap: 6px; backdrop-filter: blur(6px); }
+  .badge .dot { width: 8px; height: 8px; border-radius: 50%; background: #ff4d4f; animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: .3; } }
+  .caption { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); background: #635bffee; color: #fff; padding: 7px 14px; border-radius: 99px; font-size: 14px; font-weight: 600; white-space: nowrap; display: none; box-shadow: 0 6px 20px #0005; }
+  .steps { list-style: none; margin: 0; padding: 10px 16px 12px; border-top: 1px solid var(--line); max-height: 190px; overflow-y: auto; font-size: 13px; }
+  .steps li { padding: 3px 0; display: flex; gap: 8px; color: var(--muted); }
+  .steps li.cur { color: var(--ink); font-weight: 600; }
+  .steps li .t { font-variant-numeric: tabular-nums; min-width: 42px; color: #9aa1b5; font-weight: 400; }
+  .steps li.good { color: var(--ok); font-weight: 600; }
+  .steps li.bad { color: var(--bad); font-weight: 600; }
+  .result { margin: 0 16px 12px; padding: 10px 12px; border-radius: 10px; font-size: 13.5px; display: none; }
+  .result.good { display: block; background: #e7f6ef; color: var(--ok); }
+  .result.bad { display: block; background: #fdecea; color: var(--bad); }
+
+  #login { position: fixed; inset: 0; background: var(--bg); display: grid; place-items: center; z-index: 10; }
+  #login form { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 28px; width: min(360px, 92vw); display: grid; gap: 12px; }
+  #login h1 { margin: 0; font-size: 20px; letter-spacing: -0.01em; }
+  #login p { margin: 0; color: var(--muted); font-size: 14px; }
+  #login input { font: inherit; padding: 11px 13px; border: 1px solid var(--line); border-radius: 10px; }
+  #login .btn { padding: 11px; }
+  #login .err { color: var(--bad); font-size: 13px; min-height: 18px; }
+
+  @media (max-width: 860px) {
+    main { grid-template-columns: 1fr; height: auto; }
+    .panel.chat { height: 70vh; }
+    .panel.live { height: 75vh; }
+    .wallet span:not(:first-child) { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div id="login">
+  <form id="loginForm">
+    <h1>Agent Cards demo</h1>
+    <p>Chat with an agent that pays test checkouts with its Agent Card: Stripe Checkout, and two shops with checkout forms it has never seen. Enter the passcode you were given.</p>
+    <input id="pass" type="password" placeholder="Passcode" autocomplete="current-password" required>
+    <button class="btn" type="submit">Enter</button>
+    <div class="err" id="loginErr"></div>
+  </form>
+</div>
+
+<header>
+  <div class="brand">Agent Cards <small>shopping agent</small></div>
+  <span class="pill" title="Stripe test mode with Stripe's public test card. No real money moves.">Sandbox · test card</span>
+  <div class="wallet" id="wallet"></div>
+</header>
+
+<main>
+  <section class="panel chat">
+    <h2><span class="grow">Chat</span><button class="link" id="reset" type="button">New chat</button></h2>
+    <div id="log" aria-live="polite"></div>
+    <div class="chips" id="chips">
+      <button class="chip" type="button">What can you buy for me?</button>
+      <button class="chip" type="button">Buy me the developer sticker pack</button>
+      <button class="chip" type="button">How much can you still spend today?</button>
+    </div>
+    <form class="compose" id="compose">
+      <input id="input" placeholder="Ask the agent to buy something…" autocomplete="off" maxlength="2000">
+      <button class="btn" id="send" type="submit">Send</button>
+    </form>
+  </section>
+
+  <section class="panel live">
+    <h2><span class="grow">Live checkout</span><span id="liveState" style="text-transform:none;letter-spacing:0;font-weight:500"></span></h2>
+    <div class="stage">
+      <div class="screen">
+        <div class="idle" id="idle"><b>Waiting for a payment</b>When the agent pays, you'll see the checkout page here as it fills in the fields.</div>
+        <img id="frame" alt="The checkout page as the agent fills it" hidden>
+        <div class="badge" id="badge"><span class="dot"></span>LIVE</div>
+        <div class="caption" id="caption"></div>
+      </div>
+      <div>
+        <div class="result" id="result"></div>
+        <ol class="steps" id="steps"></ol>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const log = $("log");
+let busy = false;
+
+function add(cls, text) {
+  const el = document.createElement("div");
+  el.className = cls;
+  el.textContent = text;
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+  return el;
+}
+function addAgent(text) {
+  const el = add("msg agent", "");
+  // Plain text, with URLs made clickable.
+  for (const part of text.split(/(https?:\/\/\S+)/g)) {
+    if (/^https?:\/\//.test(part)) {
+      const a = document.createElement("a");
+      a.href = part; a.textContent = part.length > 60 ? part.slice(0, 57) + "…" : part; a.target = "_blank"; a.rel = "noopener";
+      el.appendChild(a);
+    } else el.appendChild(document.createTextNode(part.replace(/\*\*(.+?)\*\*/g, "$1")));
+  }
+  log.scrollTop = log.scrollHeight;
+}
+const usd = (c) => "$" + (c / 100).toFixed(2);
+function showWallet(w) {
+  if (!w) return;
+  $("wallet").innerHTML = "";
+  for (const [k, v] of [["Balance", usd(w.balanceCents)], ["Left today", usd(w.remainingTodayCents)], ["Per payment", usd(w.limits.perTransactionCents)]]) {
+    const s = document.createElement("span");
+    s.innerHTML = k + " <b></b>";
+    s.querySelector("b").textContent = v;
+    $("wallet").appendChild(s);
+  }
+}
+
+const TOOL_LABEL = {
+  list_products: "Looking at the shop",
+  create_checkout: "Opening a checkout",
+  pay_checkout: "Paying with the Agent Card",
+  check_stripe_payment: "Asking Stripe if it's paid",
+  check_shop_order: "Asking the shop if it's paid",
+  get_wallet: "Checking the wallet",
+  list_payments: "Listing recent payments",
+};
+
+async function send(text) {
+  if (busy || !text.trim()) return;
+  busy = true; $("send").disabled = true; $("chips").style.display = "none";
+  add("msg user", text);
+  let typing = add("typing", "Thinking");
+  const pending = {};
+  try {
+    const r = await fetch("/api/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: text }) });
+    if (r.status === 401) return showLogin();
+    if (!r.ok) { const j = await r.json().catch(() => ({})); add("error", j.error || "Request failed"); return; }
+    const reader = r.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, i); buf = buf.slice(i + 1);
+        if (!line.trim()) continue;
+        const e = JSON.parse(line);
+        typing.remove();
+        if (e.type === "text") addAgent(e.text);
+        else if (e.type === "tool") {
+          const el = add("tool run", "");
+          el.append(TOOL_LABEL[e.name] || e.name, " ");
+          const c = document.createElement("code"); c.textContent = e.name; el.appendChild(c);
+          pending[e.name] = el;
+        } else if (e.type === "tool_result") {
+          const el = pending[e.name];
+          if (el) { el.className = "tool " + (e.ok ? "ok" : "err"); if (!e.ok) el.append(" · " + e.error); }
+          if (e.name === "check_stripe_payment" && e.ok) stripeSays(e.result);
+          if (e.name === "check_shop_order" && e.ok) shopSays(e.result);
+          if (e.name === "pay_checkout" && e.ok) swapSays(e.result);
+        } else if (e.type === "error") add("error", e.error);
+        else if (e.type === "done") showWallet(e.wallet);
+        if (e.type !== "done") typing = add("typing", "Working");
+      }
+    }
+  } catch (err) {
+    add("error", "Connection lost: " + err.message);
+  } finally {
+    typing.remove();
+    busy = false; $("send").disabled = false; $("input").focus();
+  }
+}
+
+// ---------- live view
+let steps = [], t0 = 0, hideTimer;
+function step(label, cls) {
+  const li = document.createElement("li");
+  const t = document.createElement("span"); t.className = "t"; t.textContent = ((Date.now() - t0) / 1000).toFixed(1) + "s";
+  li.append(t, label);
+  for (const x of $("steps").querySelectorAll("li.cur")) x.classList.remove("cur");
+  li.className = cls || "cur";
+  $("steps").appendChild(li);
+  $("steps").scrollTop = $("steps").scrollHeight;
+  const cap = $("caption"); cap.textContent = label; cap.style.display = "block";
+}
+function setResult(text, good) { const r = $("result"); r.textContent = text; r.className = "result " + (good ? "good" : "bad"); }
+function stripeSays(cs) {
+  const paid = cs.payment_status === "paid";
+  setResult(paid ? `Stripe confirms: ${cs.sessionId.slice(0, 18)}… is ${cs.status} / ${cs.payment_status} (${usd(cs.amount_total)})` : `Stripe says: ${cs.status} / ${cs.payment_status}`, paid);
+}
+function shopSays(o) {
+  setResult(o.status === "paid" ? `${o.merchant} confirms: order ${o.orderId} is paid (${o.amount}, card ending ${o.cardLast4})` : `${o.merchant} says: order ${o.orderId} is ${o.status}`, o.status === "paid");
+}
+function swapSays(v) {
+  if (v.status !== "paid") setResult(`Agent Cards: ${v.status}${v.detail ? " · " + v.detail : ""}`, false);
+}
+let live;
+function connectLive() {
+  if (live) return;
+  const es = live = new EventSource("/api/live");
+  es.onopen = () => { $("liveState").textContent = "● connected"; $("liveState").style.color = "var(--ok)"; };
+  es.onerror = () => { $("liveState").textContent = "reconnecting…"; $("liveState").style.color = "var(--muted)"; };
+  es.onmessage = (m) => {
+    const e = JSON.parse(m.data);
+    if (e.type === "start") {
+      clearTimeout(hideTimer);
+      t0 = Date.now(); $("steps").innerHTML = ""; $("result").className = "result";
+      $("idle").hidden = true; $("frame").hidden = false; $("badge").style.display = "flex";
+      step(`Paying ${e.merchant} ${usd(e.amountCents)}`);
+    } else if (e.type === "frame") {
+      $("frame").src = "data:image/jpeg;base64," + e.jpeg;
+    } else if (e.type === "step") {
+      const good = /succeeded/i.test(e.label), bad = /^Stopped|declined/i.test(e.label);
+      step(e.label, good ? "good" : bad ? "bad" : "cur");
+    } else if (e.type === "end") {
+      $("badge").style.display = "none";
+      hideTimer = setTimeout(() => { $("caption").style.display = "none"; }, 4000);
+    }
+  };
+}
+
+// ---------- boot
+function showLogin() { $("login").style.display = "grid"; $("pass").focus(); }
+async function boot() {
+  const r = await fetch("/api/me");
+  if (r.status === 401) return showLogin();
+  const j = await r.json();
+  $("login").style.display = "none";
+  showWallet(j.wallet);
+  if (!log.children.length) addAgent("Hi! I'm a shopping agent with an Agent Card. Ask me what I can buy, or tell me what you want. When I pay, watch the panel on the right: that's the real checkout page being filled in. Try Stripe, or the two shops whose forms I've never seen (test card, no real money).");
+  connectLive();
+  $("input").focus();
+}
+$("loginForm").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  $("loginErr").textContent = "";
+  const r = await fetch("/api/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ passcode: $("pass").value }) });
+  if (r.ok) return boot();
+  const j = await r.json().catch(() => ({}));
+  $("loginErr").textContent = j.error || "Could not sign in";
+});
+$("compose").addEventListener("submit", (ev) => { ev.preventDefault(); const v = $("input").value; $("input").value = ""; send(v); });
+for (const c of document.querySelectorAll(".chip")) c.addEventListener("click", () => send(c.textContent));
+$("reset").addEventListener("click", async () => {
+  if (busy) return;
+  await fetch("/api/reset", { method: "POST" });
+  log.innerHTML = ""; $("chips").style.display = "flex";
+  boot();
+});
+boot();
+</script>
+</body>
+</html>
