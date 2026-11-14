@@ -189,6 +189,7 @@ async function setup(cfg: Partial<SwapConfig> = {}, opts: { privacy?: boolean; l
   const txns: Record<string, unknown>[] = [];
   const asked: string[] = [];
   const lifecycle = {
+    submitKyc: async () => ({ kycStatus: "Initiated" }),
     kycStatus: async () => ({ status: "Approved", customerId: "cust-1", kycToken: "kt" }),
     cardBalance: async () => 0,
     simulateAuthorization: async () => { throw new Error("a swap must never use the simulator"); },
@@ -201,7 +202,6 @@ async function setup(cfg: Partial<SwapConfig> = {}, opts: { privacy?: boolean; l
     users: repos.users, cards: repos.cards, agents: repos.agents, spends: repos.spends, fundings: repos.fundings, oneTimeCards: repos.oneTimeCards,
     ledger, wallets: new AgentWallets(ledger), addresses: createDepositAddressRepository(db, "base-sepolia"),
     deriveAddress: (i: number) => `0x${i.toString(16).padStart(40, "0")}`, tiers: DEFAULT_TIERS, chain: "base-sepolia", sandbox: true, simulatedDeposits: true,
-    miden: { request: async () => ({ isSuccessful: true, responseCode: "00", kycStatus: "Initiated" }) },
     lifecycle,
     cardIssuer: {
       issue: async (_a: string, policy: unknown) => ({ id: `card-${randomBytes(3).toString("hex")}`, agentId: "x", policy, detailsCaptured: true }),

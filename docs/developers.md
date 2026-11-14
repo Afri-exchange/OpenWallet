@@ -80,7 +80,7 @@ In privacy mode every payment is made with a **fresh one-time card** (a Miden Li
 - The mode is fixed when the user is created. Changing the default later affects new users only (money already on a user's own card could not pay a one-time card).
 - Details of a one-time card are deleted from our vault as soon as its checkout page has been filled.
 
-Demo: [`03-privacy.ts`](../examples/developer/03-privacy.ts). As an app: [Trial Guard](../examples/trial-guard/README.md), an agent that signs up for free trials with one-time cards, so no trial can bill after it ends.
+Demo: [`03-privacy.ts`](../examples/developer/03-privacy.ts).
 
 **Known limits (sandbox):**
 

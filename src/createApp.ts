@@ -32,7 +32,7 @@ export function createApp(p: AppParams): AgentCardsApp & Required<Pick<AgentCard
   const cardholders = new CardholderInteractor({
     users: p.repos.users, cards: p.repos.cards, agents: p.repos.agents, spends: p.repos.spends, fundings: p.repos.fundings,
     oneTimeCards: p.repos.oneTimeCards,
-    ledger: p.ledger, miden: p.miden, lifecycle: p.lifecycle, cardIssuer: p.cards, funding: p.funding,
+    ledger: p.ledger, lifecycle: p.lifecycle, cardIssuer: p.cards, funding: p.funding,
     wallets: p.wallets, addresses: p.addresses, deriveAddress: p.deriveAddress, tiers: p.tiers, chain: p.chain,
     sandbox: p.sandbox, simulatedDeposits: p.simulatedDeposits, log: p.log,
     ...(p.depositNetworks ? { depositNetworks: p.depositNetworks } : {}),

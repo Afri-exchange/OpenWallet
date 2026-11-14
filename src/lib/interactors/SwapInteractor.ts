@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { SwapRepository } from "../../domain/repositories/SwapRepository.js";
 import type { CheckoutSwap } from "../../domain/types/Entities.js";
-import type { CardTransaction } from "../../adapters/virtualCards/CardLifecycle.js";
+import type { CardTransaction } from "../../domain/interfaces/CardIssuing.js";
 import type { CardVault } from "../../adapters/cardVault/CardVault.js";
 import { SWAP_KEY_PREFIX, type AgentPrincipal, type ChargeOutcome, type Charger, type PayRequest, type SpendView } from "./CardholderInteractor.js";
 import { scrub, type CardDetails, type CheckoutFiller, type FillResult } from "../../adapters/checkoutFillers/CheckoutFiller.js";
