@@ -29,7 +29,7 @@ import { createSwapRepository } from "./createSwapRepository.js";
 import type { SwapRepository } from "../../domain/repositories/SwapRepository.js";
 
 /**
- * Every repository, built on one database handle (the Afriex `createRepositories`). Interactors receive only the
+ * Every repository, built on one database handle. Interactors receive only the
  * ones they use; nothing outside src/db touches Drizzle or SQL. Chain-specific stores (deposit addresses, watcher
  * cursors) are built in bootstrap with createChainRepositories.
  */

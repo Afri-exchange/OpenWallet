@@ -82,7 +82,7 @@ Every request must carry an allowed `Host` header (`127.0.0.1:<port>`, `localhos
 | quick | $50 | $100 | $500 |
 | full | $1,000 | $5,000 | unlimited |
 
-**OPEN: these are placeholder numbers**; the boss has not set thresholds (`DEFAULT_TIERS` says so). **OPEN: nothing upgrades a user from quick to full yet**; `app_user.tier` defaults to `quick` and no endpoint changes it. Money past the lifetime cap stays in the holding account until an upgrade.
+**OPEN: these are placeholder numbers**; thresholds are not set (`DEFAULT_TIERS` says so). **OPEN: nothing upgrades a user from quick to full yet**; `app_user.tier` defaults to `quick` and no endpoint changes it. Money past the lifetime cap stays in the holding account until an upgrade.
 
 ## Stage 2: funding the card (summary)
 

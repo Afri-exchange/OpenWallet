@@ -2,6 +2,7 @@
   "name": "@agent-cards/checkout",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "description": "Accept payments from AI agents that hold an Agent Card wallet",
   "type": "module",
   "main": "./dist/index.js",

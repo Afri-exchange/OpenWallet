@@ -11,7 +11,7 @@ export interface TierLimits {
   lifetimeFundedCents: number;
 }
 
-/** PLACEHOLDER amounts: the boss has not set thresholds. Inject real values. */
+/** PLACEHOLDER amounts: thresholds are not set. Inject real values. */
 export const DEFAULT_TIERS: Record<Tier, TierLimits> = {
   quick: { perTransactionCents: 5_000, dailyCents: 10_000, lifetimeFundedCents: 50_000 },
   full: { perTransactionCents: 100_000, dailyCents: 500_000, lifetimeFundedCents: Number.MAX_SAFE_INTEGER },

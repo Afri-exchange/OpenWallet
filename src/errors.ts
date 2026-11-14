@@ -1,5 +1,5 @@
 /**
- * Errors the HTTP layer may show to the caller as-is (the Afriex `AfriexError` pattern).
+ * Errors the HTTP layer may show to the caller as-is.
  *
  * Throw one of the factories below rather than `new AgentCardsError(...)`: each picks the code, and the code
  * picks the HTTP status. Anything thrown that is not an AgentCardsError is a 500 and its message is never shown.
