@@ -50,6 +50,6 @@
   },
   "optionalDependencies": {
     "@anthropic-ai/sdk": "^1.5.0",
-    "playwright-core": "1.59.0"
+    "playwright-core": "1.65.0"
   }
 }
